@@ -1,0 +1,18 @@
+[package]
+name = "idmx-client"
+description = "IDMX sender library and CLI (idmx)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "idmx"
+path = "src/main.rs"
+
+[dependencies]
+idmx-core.workspace = true
+
+[lints]
+workspace = true

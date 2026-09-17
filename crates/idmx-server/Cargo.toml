@@ -1,0 +1,18 @@
+[package]
+name = "idmx-server"
+description = "IDMX receiver daemon (idmxd)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "idmxd"
+path = "src/main.rs"
+
+[dependencies]
+idmx-core.workspace = true
+
+[lints]
+workspace = true

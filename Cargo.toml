@@ -1,0 +1,22 @@
+[workspace]
+resolver = "3"
+members = ["crates/idmx-core", "crates/idmx-server", "crates/idmx-client"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/idmx-project/idmx"
+publish = false
+
+[workspace.dependencies]
+idmx-core = { path = "crates/idmx-core" }
+
+[workspace.lints.rust]
+future-incompatible = { level = "warn", priority = -2 }
+nonstandard_style = { level = "deny", priority = -1 }
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -2 }
