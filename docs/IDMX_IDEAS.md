@@ -920,8 +920,8 @@ Constraint: both must be addable as capabilities **without changing the basic de
 
 Remaining areas still requiring design work:
 
-- exact SVCB record parameters (port, ALPN, path, pin max-age location)
-- behavior with resolvers / DNS hosts lacking SVCB support
+- ~~SVCB record parameters~~ — settled 2026-09-17, see `spec/discovery.md`: standard `port` (default 443), fixed path at origin root, no custom SvcParamKeys; h2 mandatory, h3 optional via `alpn`; pin max-age = `discovery_pin_max_age` in the capabilities document
+- ~~resolvers lacking SVCB support~~ — settled 2026-09-17: pin-aware; lookup failure without a pin → SMTP, with a valid pin → keep using the pinned endpoint. Still open: forbid SMTP fallback entirely while pinned?
 - exact envelope schema and endpoint layout (OpenAPI draft)
 - ~~RFC 9421 profile~~ — settled 2026-09-17, see `spec/signing.md`: Ed25519 only; covers `@method`, `@authority`, `@path`, `content-digest`, `content-type`, `content-length`, `idempotency-key`; `sha-256` digest over raw bytes, no canonicalization
 - ~~key record format~~ — settled 2026-09-17: DKIM-style TXT `v=IDMX1; k=ed25519; p=<base64>`; empty `p=` revokes. Still open: key cache bounds, subdomain signing policy

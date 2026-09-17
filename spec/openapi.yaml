@@ -102,7 +102,9 @@ paths:
       tags: [capabilities]
       operationId: getCapabilities
       summary: Limits and optional feature flags of this receiver.
-      description: Cacheable (`Cache-Control`). Unsigned. No discover-by-failure.
+      description: |
+        Cacheable (`Cache-Control`). Unsigned. No discover-by-failure. Each
+        successful fetch sets or refreshes the sender's discovery pin.
       responses:
         '200':
           description: Capabilities document.
@@ -233,6 +235,12 @@ components:
           type: integer
           description: Bytes. Spec floor TODO (e.g. >= 25 MB). Over limit -> `message_too_large`.
           minimum: 1
+        discovery_pin_max_age:
+          type: integer
+          minimum: 0
+          description: |
+            Seconds a sender pins this domain's positive discovery result
+            (discovery.md §3). `0` or absent removes the pin.
         features:
           type: object
           description: Optional feature flags. Unknown flags MUST be ignored.
