@@ -1,0 +1,271 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+#
+# IDMX server-to-server API. SKELETON: schemas marked TODO are not settled.
+# Normative companions: discovery.md, signing.md, errors.md.
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: IDMX — Inter-Domain Mail Exchange
+  version: 0.0.0-draft
+  summary: HTTPS-based inter-domain mail delivery (experimental draft).
+  description: |
+    The endpoint origin is found via SVCB on `_idmx.<domain>` (see discovery.md).
+    TLS 1.3 is mandatory. Every request to `/v1/messages` carries an RFC 9421
+    HTTP Message Signature by the sending domain (see signing.md).
+
+    Evolution rules: the major version lives in the URL path; minor evolution
+    is additive only; receivers and senders MUST ignore unknown JSON fields.
+  license:
+    name: MIT OR Apache-2.0
+    identifier: MIT OR Apache-2.0
+servers:
+  - url: https://{idmxHost}
+    description: Host discovered via SVCB on `_idmx.<recipient-domain>`.
+    variables:
+      idmxHost:
+        default: idmx.example.org
+tags:
+  - name: delivery
+  - name: capabilities
+
+paths:
+  /v1/messages:
+    post:
+      tags: [delivery]
+      operationId: deliverMessage
+      summary: Deliver one message to one or more recipients of a single domain.
+      description: |
+        One POST per recipient domain. The body is sent once; the response
+        carries one result per recipient (mirrors SMTP RCPT semantics).
+
+        The receiver SHOULD validate as much as possible synchronously
+        (recipient exists, quota, policy) before returning 2xx. Failures after
+        acceptance are reported as an RFC 3464 DSN delivered as a normal message.
+
+        TODO(open question): exact multipart layout. Current skeleton:
+        `multipart/mixed` with part 1 = `application/json` envelope and
+        part 2 = `message/rfc822` opaque RFC 5322/MIME message.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/Signature'
+        - $ref: '#/components/parameters/SignatureInput'
+        - $ref: '#/components/parameters/ContentDigest'
+      requestBody:
+        required: true
+        content:
+          multipart/mixed:
+            schema:
+              type: object
+              required: [envelope, message]
+              properties:
+                envelope:
+                  $ref: '#/components/schemas/Envelope'
+                message:
+                  type: string
+                  contentMediaType: message/rfc822
+                  description: Opaque RFC 5322/MIME message, byte-for-byte. DKIM signatures inside survive.
+            encoding:
+              envelope:
+                contentType: application/json
+              message:
+                contentType: message/rfc822
+      responses:
+        '200':
+          description: |
+            Request processed; see per-recipient results. A retried delivery
+            with a known `Idempotency-Key` returns the original result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryResult'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/ProblemRetryAfter'
+        '503':
+          $ref: '#/components/responses/ProblemRetryAfter'
+        default:
+          $ref: '#/components/responses/Problem'
+
+  /v1/capabilities:
+    get:
+      tags: [capabilities]
+      operationId: getCapabilities
+      summary: Limits and optional feature flags of this receiver.
+      description: Cacheable (`Cache-Control`). Unsigned. No discover-by-failure.
+      responses:
+        '200':
+          description: Capabilities document.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capabilities'
+        default:
+          $ref: '#/components/responses/Problem'
+
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Covers the whole delivery (all recipients). Retries re-sign with a
+        fresh timestamp but reuse the same key. Receivers remember keys for at
+        least the maximum sender retry window (e.g. 7 days).
+        TODO(open question): key format and length bounds.
+      schema:
+        type: string
+    Signature:
+      name: Signature
+      in: header
+      required: true
+      description: RFC 9421 signature. Profile in signing.md.
+      schema:
+        type: string
+    SignatureInput:
+      name: Signature-Input
+      in: header
+      required: true
+      description: RFC 9421 signature parameters (`created`, `keyid`, covered components). Profile in signing.md.
+      schema:
+        type: string
+    ContentDigest:
+      name: Content-Digest
+      in: header
+      required: true
+      description: RFC 9530 digest of the request body, covered by the signature.
+      schema:
+        type: string
+
+  responses:
+    Problem:
+      description: RFC 9457 problem details. Semantics per `type` in errors.md.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ProblemRetryAfter:
+      description: RFC 9457 problem details with retry hint.
+      headers:
+        Retry-After:
+          schema:
+            type: string
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+
+  schemas:
+    Envelope:
+      $id: https://idmx-project.org/schemas/v1/envelope
+      description: |
+        Structured delivery envelope. Unknown fields MUST be ignored (leaves
+        room for later capabilities such as sender attestations).
+        TODO(open question): exact envelope schema.
+      type: object
+      required: [from, to]
+      properties:
+        from:
+          type: string
+          description: Envelope sender (`user@domain`). Domain MUST match the signing domain of the transport signature.
+        to:
+          type: array
+          minItems: 1
+          description: Recipients; all MUST share one domain.
+          items:
+            type: string
+        message_id:
+          type: string
+          description: TODO(open question) — relationship to RFC 5322 Message-ID and to Idempotency-Key.
+      additionalProperties: true
+
+    DeliveryResult:
+      $id: https://idmx-project.org/schemas/v1/delivery-result
+      description: TODO(open question) — per-recipient result schema and partial-failure retry rules.
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          description: One entry per envelope recipient, same order as `to`.
+          items:
+            $ref: '#/components/schemas/RecipientResult'
+      additionalProperties: true
+
+    RecipientResult:
+      type: object
+      required: [recipient, status]
+      properties:
+        recipient:
+          type: string
+        status:
+          type: string
+          enum: [accepted, rejected, deferred]
+        problem:
+          $ref: '#/components/schemas/Problem'
+          description: Present when status is not `accepted`.
+      additionalProperties: true
+
+    Capabilities:
+      $id: https://idmx-project.org/schemas/v1/capabilities
+      description: |
+        TODO(open question) — full schema; reserve room for first-contact
+        friction and attestations via `features`.
+      type: object
+      required: [max_message_size]
+      properties:
+        max_message_size:
+          type: integer
+          description: Bytes. Spec floor TODO (e.g. >= 25 MB). Over limit -> `message_too_large`.
+          minimum: 1
+        features:
+          type: object
+          description: Optional feature flags. Unknown flags MUST be ignored.
+          additionalProperties: true
+        abuse_contact:
+          type: string
+          description: TODO(open question) — abuse-report contact format.
+      additionalProperties: true
+
+    Problem:
+      $id: https://idmx-project.org/schemas/v1/problem
+      description: RFC 9457 problem details. `type` is `https://idmx-project.org/problems/<identifier>`.
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          format: uri
+          examples:
+            - https://idmx-project.org/problems/recipient_not_found
+            - https://idmx-project.org/problems/invalid_signature
+            - https://idmx-project.org/problems/unsupported_version
+            - https://idmx-project.org/problems/unsupported_feature
+            - https://idmx-project.org/problems/temporary_failure
+            - https://idmx-project.org/problems/rate_limited
+            - https://idmx-project.org/problems/policy_rejected
+            - https://idmx-project.org/problems/message_too_large
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+      additionalProperties: true
