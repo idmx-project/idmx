@@ -1,0 +1,12 @@
+# IDMX devnet — PLACEHOLDER. Nothing here runs yet.
+#
+# Planned services:
+#   dns        CoreDNS: zones for the test domains, SVCB + _idmxkey records
+#   domain-a   modern domain (idmxd + idmx sender)   -> domain-a.test
+#   domain-b   modern domain (idmxd + idmx sender)   -> domain-b.test
+#   legacy     SMTP-only domain                      -> legacy.test
+#   postfix    SMTP fallback hand-off for the modern senders
+#
+# Flow 1: domain-a.test -> domain-b.test via IDMX.
+# Flow 2: domain-a.test -> legacy.test via SMTP fallback (Postfix).
+services: {}
