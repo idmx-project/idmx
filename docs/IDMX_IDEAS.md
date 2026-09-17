@@ -923,8 +923,8 @@ Remaining areas still requiring design work:
 - exact SVCB record parameters (port, ALPN, path, pin max-age location)
 - behavior with resolvers / DNS hosts lacking SVCB support
 - exact envelope schema and endpoint layout (OpenAPI draft)
-- RFC 9421 profile: covered components, algorithms (Ed25519?), body digest, canonicalization
-- key record format, rotation and revocation procedure
+- ~~RFC 9421 profile~~ — settled 2026-09-17, see `spec/signing.md`: Ed25519 only; covers `@method`, `@authority`, `@path`, `content-digest`, `content-type`, `content-length`, `idempotency-key`; `sha-256` digest over raw bytes, no canonicalization
+- ~~key record format~~ — settled 2026-09-17: DKIM-style TXT `v=IDMX1; k=ed25519; p=<base64>`; empty `p=` revokes. Still open: key cache bounds, subdomain signing policy
 - exact retry schedule and fallback window value
 - pin max-age defaults and pin-failure reporting (TLS-RPT equivalent?)
 - trace / `Authentication-Results` header format for IDMX-received mail
