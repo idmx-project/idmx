@@ -196,5 +196,10 @@ TODO: trace / `Authentication-Results` header format for IDMX-received mail.
 
 ## 9. Test vectors
 
-TODO: `spec/test-vectors/` — key pair, request, signature base, signature;
-generated and checked by `idmx-core` (milestone 2).
+See `test-vectors/`. `signing-basic.json` holds a complete valid request:
+inputs, key pair, and the expected `Content-Digest`, `Signature-Input`,
+signature base, and `Signature`. Ed25519 is deterministic, so signers must
+reproduce the expected values byte for byte.
+
+TODO: negative vectors (expired `created`, wrong digest, revoked key) as data
+rather than implementation tests.

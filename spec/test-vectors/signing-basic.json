@@ -1,0 +1,23 @@
+{
+  "description": "Valid signed POST /v1/messages. Key pair is RFC 8032 section 7.1 TEST 1. Verified independently with OpenSSL 3.6.",
+  "private_key_seed_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+  "public_key_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+  "keyid": "s1._idmxkey.sender.example",
+  "key_record_txt": "v=IDMX1; k=ed25519; p=11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+  "created": 1789668000,
+  "request": {
+    "method": "POST",
+    "authority": "idmx.receiver.example",
+    "path": "/v1/messages",
+    "content_type": "multipart/mixed; boundary=idmx-boundary",
+    "content_length": 352,
+    "idempotency_key": "01J8ZQ4M9X6T3V5B7N2K0HCDEF",
+    "body_file": "signing-basic.body"
+  },
+  "expected": {
+    "content_digest": "sha-256=:RGCtrKKvmpzpx+UOKhZiE70vib0lxFcNxW3xyFzO8C8=:",
+    "signature_input": "idmx=(\"@method\" \"@authority\" \"@path\" \"content-digest\" \"content-type\" \"content-length\" \"idempotency-key\");created=1789668000;keyid=\"s1._idmxkey.sender.example\";alg=\"ed25519\";tag=\"idmx-v1\"",
+    "signature_base": "\"@method\": POST\n\"@authority\": idmx.receiver.example\n\"@path\": /v1/messages\n\"content-digest\": sha-256=:RGCtrKKvmpzpx+UOKhZiE70vib0lxFcNxW3xyFzO8C8=:\n\"content-type\": multipart/mixed; boundary=idmx-boundary\n\"content-length\": 352\n\"idempotency-key\": 01J8ZQ4M9X6T3V5B7N2K0HCDEF\n\"@signature-params\": (\"@method\" \"@authority\" \"@path\" \"content-digest\" \"content-type\" \"content-length\" \"idempotency-key\");created=1789668000;keyid=\"s1._idmxkey.sender.example\";alg=\"ed25519\";tag=\"idmx-v1\"",
+    "signature": "idmx=:2B1j4vdF3EWrpfIOH5FSYuI9Nv7+GGQI7FESCTGDS6mYezltsTxXDtZO/YoGJXphgjpFi79yVvHJQ5XUBchPCw==:"
+  }
+}
