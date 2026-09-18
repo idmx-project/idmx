@@ -921,15 +921,15 @@ Constraint: both must be addable as capabilities **without changing the basic de
 Remaining areas still requiring design work:
 
 - ~~SVCB record parameters~~ — settled 2026-09-17, see `spec/discovery.md`: standard `port` (default 443), fixed path at origin root, no custom SvcParamKeys; h2 mandatory, h3 optional via `alpn`; pin max-age = `discovery_pin_max_age` in the capabilities document
-- ~~resolvers lacking SVCB support~~ — settled 2026-09-17: pin-aware; lookup failure without a pin → SMTP, with a valid pin → keep using the pinned endpoint. Still open: forbid SMTP fallback entirely while pinned?
+- ~~resolvers lacking SVCB support~~ — settled 2026-09-17: pin-aware; lookup failure without a pin → SMTP, with a valid pin → keep using the pinned endpoint. Settled 2026-09-18: a valid pin does not forbid SMTP fallback after the window (no `enforce` semantics in v1)
 - ~~envelope schema and body layout~~ — settled 2026-09-18, see `spec/delivery.md`: `multipart/mixed` with exactly two parts (`application/json` envelope, raw `message/rfc822`); envelope = `from` (mailbox or `null`) + `to`; `Idempotency-Key` = 1–128 chars of `A-Za-z0-9._~-`, scoped per signing domain, reuse with other content → `idempotency_conflict`. Still open: local-part syntax
 - ~~RFC 9421 profile~~ — settled 2026-09-17, see `spec/signing.md`: Ed25519 only; covers `@method`, `@authority`, `@path`, `content-digest`, `content-type`, `content-length`, `idempotency-key`; `sha-256` digest over raw bytes, no canonicalization
 - ~~key record format~~ — settled 2026-09-17: DKIM-style TXT `v=IDMX1; k=ed25519; p=<base64>`; empty `p=` revokes. Still open: key cache bounds, subdomain signing policy
-- exact retry schedule and fallback window value
-- pin max-age defaults and pin-failure reporting (TLS-RPT equivalent?)
+- ~~exact retry schedule and fallback window value~~ — settled 2026-09-18, see `spec/errors.md` §3.1: backoff 1 min doubling to 1 h cap, ±20 % jitter, `Retry-After` as lower bound; fallback window 2 h (1–4 h); give-up 5 days. Only connection/TLS failure or request-level 5xx falls back; `unsupported_feature`, `rate_limited`, `mailbox_full` and all per-recipient results never do
+- ~~pin max-age defaults~~ — settled 2026-09-18: recommended 7 days, senders clamp at 1 year. Still open: pin-failure reporting (TLS-RPT equivalent?)
 - ~~trace / `Authentication-Results` header format~~ — settled 2026-09-18, see `spec/signing.md` §8: `Received: … with IDMX id <idempotency-key>` plus `Authentication-Results: …; idmx=pass header.d=… header.s=…`. Still open: IANA registrations
 - settled 2026-09-18 (constants): size floor 25 MiB with no upper limit; idempotency retention and sender retry cap 7 days; signing domain must match exactly (no subdomain inheritance); key cache ≤ DNS TTL ≤ 1 h, negative ≤ 5 min
-- ~~per-recipient result schema~~ — settled 2026-09-18: request-level failures → 4xx/5xx problem; otherwise always `200` with `accepted` / `rejected` / `deferred` per recipient; deferred recipients are retried as a new delivery with a new key. Still open: retry schedule for deferred recipients
+- ~~per-recipient result schema~~ — settled 2026-09-18: request-level failures → 4xx/5xx problem; otherwise always `200` with `accepted` / `rejected` / `deferred` per recipient; deferred recipients are retried as a new delivery with a new key. Retry schedule for deferred recipients = `spec/errors.md` §3.1; deferred never falls back to SMTP
 - capabilities document schema; how to reserve room for first-contact friction and attestations
 - abuse-report contact format
 - list semantics (post-v1)

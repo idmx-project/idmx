@@ -22,10 +22,10 @@ per-recipient `problem` inside a `200` result (`delivery.md` §5).
 | `unsupported_version` | R | 404 | permanent | no | **allowed**, immediately (§3) |
 | `idempotency_conflict` | R | 409 | permanent | no | never |
 | `message_too_large` | R | 413 | permanent | no | never |
-| `unsupported_feature` | R | 422 | permanent | no | TODO |
-| `rate_limited` | R, P | 429 | temporary | yes, honor `Retry-After` / `retry_after` | TODO |
-| `mailbox_full` | P | — | temporary | yes | TODO |
-| `temporary_failure` | R, P | 503 | temporary | yes | after fallback window (R) |
+| `unsupported_feature` | R | 422 | permanent | no | never |
+| `rate_limited` | R, P | 429 | temporary | yes, honor `Retry-After` / `retry_after` | never |
+| `mailbox_full` | P | — | temporary | yes | never |
+| `temporary_failure` | R, P | 503 | temporary | yes | after fallback window (R only); never (P) |
 
 - `unsupported_version` is the answer to any path under an unknown major
   version (e.g. `/v2/...`). Senders avoid it by selecting a version from the
@@ -39,17 +39,46 @@ per-recipient `problem` inside a `200` result (`delivery.md` §5).
 
 ## 3. Fallback rule
 
-- IDMX advertised but unreachable / 5xx: **retry IDMX with backoff for a
-  bounded window (order of 1–4 h), then fall back to SMTP**.
-- Explicit IDMX rejections (4xx-class semantic errors) **never fall back**.
-  SMTP must not bypass a deliberate IDMX rejection.
+- IDMX advertised but unreachable / 5xx: **retry IDMX with backoff for the
+  fallback window (§3.1), then fall back to SMTP**. This is the only case that
+  falls back: a connection failure, a TLS failure, or a request-level 5xx.
+- **Any other authenticated IDMX answer never falls back**: 4xx problems
+  (including `rate_limited` and `unsupported_feature`) and every per-recipient
+  result (`rejected` or `deferred`, including `mailbox_full`). SMTP must not
+  bypass a deliberate IDMX rejection or throttle, and a full mailbox is just as
+  full over SMTP. Temporary ones are retried over IDMX until give-up (§3.1).
+- A valid pin does **not** forbid this fallback (`discovery.md` §3.2).
 - **Exception — no common major version** (`unsupported_version`, or a
   `versions` list without any version the sender supports): the sender MAY
   fall back to SMTP immediately, even while a pin is valid. The receiver has
   not rejected the message; the two systems merely share no IDMX version, which
   is equivalent to the domain not supporting IDMX for this sender.
 
-TODO: exact retry schedule and fallback window value.
+### 3.1 Retry schedule
+
+One schedule covers request-level temporary failures and deferred recipients
+(`delivery.md` §5.3). All times count from the **first delivery attempt** of
+the message to that recipient domain.
+
+| Parameter | Value |
+|---|---|
+| First retry | 1 min after the first attempt |
+| Backoff | delay doubles per attempt, capped at **1 h** |
+| Jitter | each delay SHOULD be randomized by ±20 % |
+| Fallback window | SHOULD be **2 h**; MUST be within 1–4 h in production use |
+| Give-up | **5 days**, then bounce (RFC 3464 DSN to the envelope sender) |
+
+- `Retry-After` (request level) and `retry_after` (per recipient) are a **lower
+  bound**: the next attempt happens at the later of the scheduled time and the
+  time the receiver asked for.
+- SMTP fallback happens at the first attempt time at or after the end of the
+  fallback window, if every attempt so far ended in a fallback-eligible failure
+  (§3). A non-eligible temporary answer (e.g. `rate_limited`) proves the
+  endpoint is alive; the sender keeps retrying IDMX.
+- After handing the message to SMTP, the sender makes no further IDMX attempts
+  for it.
+- Give-up (5 days) lies inside the 7-day idempotency-key limit
+  (`delivery.md` §4).
 
 ## 4. Idempotency
 

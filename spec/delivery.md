@@ -161,8 +161,10 @@ A retry for deferred recipients is a **new delivery**: a new `Idempotency-Key`
 and an envelope whose `to` lists only the deferred recipients. (Reusing the key
 would replay the original response.)
 
-TODO: retry schedule and give-up time for deferred recipients; whether
-`deferred` may ever fall back to SMTP.
+Deferred recipients follow the retry schedule of `errors.md` §3.1 (backoff,
+`retry_after` as lower bound, give-up after 5 days counted from the first
+attempt of the original delivery). `deferred` recipients **never fall back to
+SMTP**; at give-up they bounce.
 
 ## 6. Capabilities used by delivery
 

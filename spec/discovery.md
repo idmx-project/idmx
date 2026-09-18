@@ -71,6 +71,8 @@ handles RR type 64; there is no substitute record type.
   never from DNS.
 - The pin is set or refreshed on every successful capabilities fetch.
   `discovery_pin_max_age: 0` (or absent) removes the pin.
+- Receivers SHOULD advertise **604 800** (7 days). Senders MUST treat values
+  above **31 557 600** (1 year) as 31 557 600.
 - Senders SHOULD refetch capabilities at least as often as its HTTP cache
   lifetime allows, and before a pin expires.
 
@@ -89,9 +91,12 @@ handles RR type 64; there is no substitute record type.
   rule of `errors.md` §3 applies: retry IDMX with backoff for the bounded
   fallback window, then SMTP.
 
-TODO: should SMTP fallback be forbidden entirely while a pin is valid
-(MTA-STS `enforce` semantics) instead of allowed after the fallback window?
-TODO: recommended `discovery_pin_max_age` default and upper bound.
+- A valid pin does **not** forbid that fallback (no MTA-STS `enforce`
+  semantics in v1). The pin protects against forged or stripped DNS answers;
+  an attacker who can block the endpoint itself for the whole fallback window
+  can still force SMTP. This is a known v1 limitation, accepted so that a
+  receiver outage delays mail by hours, not days.
+
 TODO: pin-failure reporting (TLS-RPT equivalent?).
 
 ## 4. Transport

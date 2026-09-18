@@ -284,7 +284,9 @@ components:
           minimum: 0
           description: |
             Seconds a sender pins this domain's positive discovery result
-            (discovery.md §3). `0` or absent removes the pin.
+            (discovery.md §3). `0` or absent removes the pin. Receivers SHOULD
+            advertise 604800 (7 days); senders treat values above 31557600
+            (1 year) as 31557600.
         features:
           type: object
           description: Optional feature flags. Unknown flags MUST be ignored.
