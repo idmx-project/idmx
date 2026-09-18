@@ -19,6 +19,7 @@ use crate::schedule::SmtpFallback;
 
 const MESSAGES_PATH: &str = "/v1/messages";
 const CAPABILITIES_PATH: &str = "/v1/capabilities";
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Local failures that prevent an attempt from being made at all.
 #[derive(Debug, thiserror::Error)]
@@ -79,7 +80,10 @@ pub enum Attempt {
 pub fn http_client_builder() -> reqwest::ClientBuilder {
     // A failed install only means a provider is already in place.
     let _ = rustls::crypto::ring::default_provider().install_default();
-    reqwest::Client::builder().tls_version_min(reqwest::tls::Version::TLS_1_3)
+    reqwest::Client::builder()
+        .tls_version_min(reqwest::tls::Version::TLS_1_3)
+        // A black-holed endpoint must not stall the queue.
+        .connect_timeout(CONNECT_TIMEOUT)
 }
 
 /// Performs delivery attempts for one sending identity.
