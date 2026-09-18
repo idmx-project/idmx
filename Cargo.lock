@@ -941,6 +941,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "idmx-conformance"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "clap",
+ "idmx-core",
+ "idmx-server",
+ "reqwest",
+ "rustls",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "idmx-core"
 version = "0.0.0"
 dependencies = [

@@ -17,11 +17,13 @@ spec/            Specification (source of truth)
   delivery.md      Body layout, envelope, idempotency, per-recipient results
   discovery.md     SVCB discovery on _idmx.<domain>, pinning
   signing.md       RFC 9421 signing profile, keys at <selector>._idmxkey.<domain>
+  capabilities.md  Capabilities document: versions, limits, no feature flags
   errors.md        Error identifiers, retry and SMTP fallback rules
 crates/
   idmx-core/       Envelope types, RFC 9421 sign/verify, SVCB discovery
   idmx-server/     Receiver daemon (binary: idmxd)
   idmx-client/     Sender library + CLI (binary: idmx)
+  idmx-conformance/  Black-box receiver checks (binary: idmx-conformance <origin>)
 devnet/          Local IDMX network in containers (podman or docker); see devnet/README.md
 docs/            Design notes (IDMX_IDEAS.md)
 ```

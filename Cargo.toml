@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["crates/idmx-core", "crates/idmx-server", "crates/idmx-client"]
+members = [
+    "crates/idmx-core",
+    "crates/idmx-server",
+    "crates/idmx-client",
+    "crates/idmx-conformance",
+]
 
 [workspace.package]
 version = "0.0.0"
