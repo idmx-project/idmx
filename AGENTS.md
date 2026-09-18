@@ -15,3 +15,10 @@
 - Quality gates before every commit: `cargo fmt --all -- --check`,
   `cargo clippy --all-targets --all-features --locked -- -D warnings`, `cargo test`,
   `cargo deny check`.
+- Containers: use rootless podman (`podman`, `podman compose`), not docker, unless told otherwise.
+  The devnet scripts default to it (`CONTAINER_ENGINE` overrides). Verify devnet changes by
+  running `./devnet/up.sh` and the flow scripts, not only by reading them.
+- Workflow: commit locally in small commits; the maintainer reviews and pushes. Check
+  `git status -sb` before claiming anything about what is or is not pushed.
+- Ask before deciding anything listed under "Open Questions" in `docs/IDMX_IDEAS.md` or marked
+  TODO in `spec/`; give a recommendation first.
