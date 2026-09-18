@@ -1,0 +1,8 @@
+$ORIGIN @DOMAIN@.
+$TTL 60
+@            IN SOA  ns.@DOMAIN@. hostmaster.@DOMAIN@. 1 3600 600 86400 60
+@            IN NS   ns.@DOMAIN@.
+ns           IN A    10.89.53.2
+idmx         IN A    @IP@
+_idmx        IN SVCB 1 idmx.@DOMAIN@. @SVCB_PARAMS@
+s1._idmxkey  IN TXT  "v=IDMX1; k=ed25519; p=@PUBLIC_KEY@"

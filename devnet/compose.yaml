@@ -1,12 +1,50 @@
-# IDMX devnet — PLACEHOLDER. Nothing here runs yet.
+# IDMX devnet. Do not start this directly: ./devnet/up.sh generates keys,
+# certificates, and zones, creates the network, and builds the image first.
 #
-# Planned services:
-#   dns        CoreDNS: zones for the test domains, SVCB + _idmxkey records
-#   domain-a   modern domain (idmxd + idmx sender)   -> domain-a.test
-#   domain-b   modern domain (idmxd + idmx sender)   -> domain-b.test
-#   legacy     SMTP-only domain                      -> legacy.test
-#   postfix    SMTP fallback hand-off for the modern senders
+#   dns        CoreDNS, authoritative for the *.test zones      10.89.53.2
+#   domain-a   idmxd for domain-a.test on port 443              10.89.53.11
+#   domain-b   idmxd for domain-b.test on port 8443 (SVCB port) 10.89.53.12
 #
-# Flow 1: domain-a.test -> domain-b.test via IDMX.
-# Flow 2: domain-a.test -> legacy.test via SMTP fallback (Postfix).
-services: {}
+# Planned for flow 2: legacy.test (SMTP only) and Postfix.
+
+networks:
+  idmx:
+    # Created by up.sh with --disable-dns so that containers resolve through
+    # CoreDNS only (podman's own DNS forwarder is not in the path).
+    external: true
+    name: idmx-devnet
+
+x-idmxd: &idmxd
+  image: localhost/idmx-devnet:latest
+  dns: 10.89.53.2
+  depends_on: [dns]
+  restart: "no"
+
+services:
+  dns:
+    image: docker.io/coredns/coredns:1.12.0
+    container_name: idmx-dns
+    command: ["-conf", "/etc/coredns/Corefile"]
+    volumes:
+      - ./generated/dns:/etc/coredns:ro
+    networks:
+      idmx:
+        ipv4_address: 10.89.53.2
+
+  domain-a:
+    <<: *idmxd
+    container_name: idmx-domain-a
+    volumes:
+      - ./generated/domain-a:/etc/idmx:ro
+    networks:
+      idmx:
+        ipv4_address: 10.89.53.11
+
+  domain-b:
+    <<: *idmxd
+    container_name: idmx-domain-b
+    volumes:
+      - ./generated/domain-b:/etc/idmx:ro
+    networks:
+      idmx:
+        ipv4_address: 10.89.53.12

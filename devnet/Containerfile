@@ -1,0 +1,18 @@
+# Builds idmxd and idmx for the devnet. Context: repository root.
+FROM docker.io/library/rust:1-slim-bookworm AS build
+WORKDIR /src
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+# Integration tests read spec/test-vectors at test time only; the build does not need spec/.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/target \
+    cargo build --release --locked --bin idmxd --bin idmx \
+    && cp target/release/idmxd target/release/idmx /usr/local/bin/
+
+FROM docker.io/library/debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /usr/local/bin/idmxd /usr/local/bin/idmx /usr/local/bin/
+ENTRYPOINT ["idmxd"]
+CMD ["/etc/idmx/idmxd.toml"]

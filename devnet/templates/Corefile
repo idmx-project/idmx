@@ -1,0 +1,11 @@
+domain-a.test:53 {
+    file /etc/coredns/domain-a.test.zone
+    errors
+    log
+}
+
+domain-b.test:53 {
+    file /etc/coredns/domain-b.test.zone
+    errors
+    log
+}

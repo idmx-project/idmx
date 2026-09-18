@@ -1,0 +1,12 @@
+domain = "@DOMAIN@"
+authority = "@AUTHORITY@"
+listen = "0.0.0.0:@PORT@"
+data_dir = "/var/lib/idmxd"
+discovery_pin_max_age = 3600
+
+[tls]
+cert = "/etc/idmx/cert.pem"
+key = "/etc/idmx/key.pem"
+
+[[mailbox]]
+address = "@USER@@@DOMAIN@"

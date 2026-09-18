@@ -6,8 +6,8 @@ compatibility.
 
 **Status: experimental.** Nothing here is stable. The spec is an early draft
 and the reference implementation covers signing, discovery, the receiver
-(`idmxd`), and single delivery attempts (`idmx send`); queueing, pinning, SMTP
-fallback, and the devnet are still missing.
+(`idmxd`), and single delivery attempts (`idmx send`). The devnet demonstrates
+modern → modern delivery; queueing, pinning, and SMTP fallback are still missing.
 
 ## Layout
 
@@ -22,7 +22,7 @@ crates/
   idmx-core/       Envelope types, RFC 9421 sign/verify, SVCB discovery
   idmx-server/     Receiver daemon (binary: idmxd)
   idmx-client/     Sender library + CLI (binary: idmx)
-devnet/          Docker Compose dev environment (placeholder)
+devnet/          Local IDMX network in containers (podman or docker); see devnet/README.md
 docs/            Design notes (IDMX_IDEAS.md)
 ```
 
