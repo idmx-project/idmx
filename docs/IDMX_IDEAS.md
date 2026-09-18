@@ -890,7 +890,7 @@ Working decisions for v1. Each can be revisited, but they are the baseline for t
 | Multi-recipient | **One POST per recipient domain, per-recipient result array** in the response; the idempotency key covers the whole delivery | Body sent once; mirrors SMTP RCPT semantics |
 | Bounces / DSN | **Maximize synchronous validation before 2xx** (recipient exists, quota, policy). Post-acceptance failures are reported as a classic RFC 3464 DSN delivered as a normal message | No new async mechanism in v1 |
 | Encryption | **TLS 1.3 mandatory**. End-to-end encryption stays in the message layer (PGP / S/MIME), untouched by IDMX | Guaranteed hop encryption is already a large win over opportunistic STARTTLS |
-| Versioning / capabilities | **Major version in URL path** (`/v1/`), cacheable `GET /v1/capabilities` for limits and optional feature flags, unknown JSON fields must be ignored, minor evolution is additive only | No discover-by-failure, no DNS record bloat |
+| Versioning / capabilities | **Major version in URL path** (`/v1/`), cacheable `GET /v1/capabilities` for versions, limits and operational parameters — **no feature flags, no optional behavior inside a major version** (revised 2026-09-18, `spec/capabilities.md`); unknown JSON fields must be ignored, minor evolution is additive only | No discover-by-failure, no DNS record bloat |
 | Size limits | Receiver advertises `max_message_size` in capabilities; spec mandates a **floor (e.g. ≥ 25 MB)**; over limit → `message_too_large` (permanent). No chunked/resumable upload in v1 | Predictable interop, minimal state |
 | Inbound architecture | IDMX receiver is a **front door beside the MTA**: hands the accepted MIME message to the same local delivery (LMTP / pipe), adding a trace header and `Authentication-Results`. Mailbox layer is transport-unaware | Consistent with "do not reinvent mailbox access" |
 | Aliases / lists / migration | **v1: receiver-internal, spec silent** (notes only). Expansion and list explosion re-originate as new deliveries signed by the forwarding domain. Domain migration = change the SVCB record; pin max-age bounds the transition. **Later version: specify list semantics** (list fields, loop detection, re-signing rules) | Keeps v1 small; two-layer signatures already cover the mechanics |
@@ -912,7 +912,7 @@ While SMTP remains a parallel path, any IDMX-only anti-abuse mechanism is bypass
 - **first-contact friction**: unknown sender→recipient pairs may be throttled, quarantined, or challenged; known correspondents flow freely
 - **optional sender attestations**: provider- or third-party-signed claims in the envelope
 
-Constraint: both must be addable as capabilities **without changing the basic delivery model**. The v1 envelope and capabilities document must therefore leave room for them (ignored-unknown-fields rule, feature flags).
+Constraint: both must be addable **without changing the basic delivery model**. Revised 2026-09-18: v1 has no feature flags; both are candidates for a later major version, where they would be mandatory. The ignored-unknown-fields rule keeps the envelope extensible for them.
 
 ---
 
@@ -925,13 +925,13 @@ Remaining areas still requiring design work:
 - ~~envelope schema and body layout~~ — settled 2026-09-18, see `spec/delivery.md`: `multipart/mixed` with exactly two parts (`application/json` envelope, raw `message/rfc822`); envelope = `from` (mailbox or `null`) + `to`; `Idempotency-Key` = 1–128 chars of `A-Za-z0-9._~-`, scoped per signing domain, reuse with other content → `idempotency_conflict`. Still open: local-part syntax
 - ~~RFC 9421 profile~~ — settled 2026-09-17, see `spec/signing.md`: Ed25519 only; covers `@method`, `@authority`, `@path`, `content-digest`, `content-type`, `content-length`, `idempotency-key`; `sha-256` digest over raw bytes, no canonicalization
 - ~~key record format~~ — settled 2026-09-17: DKIM-style TXT `v=IDMX1; k=ed25519; p=<base64>`; empty `p=` revokes. Still open: key cache bounds, subdomain signing policy
-- ~~exact retry schedule and fallback window value~~ — settled 2026-09-18, see `spec/errors.md` §3.1: backoff 1 min doubling to 1 h cap, ±20 % jitter, `Retry-After` as lower bound; fallback window 2 h (1–4 h); give-up 5 days. Only connection/TLS failure or request-level 5xx falls back; `unsupported_feature`, `rate_limited`, `mailbox_full` and all per-recipient results never do
+- ~~exact retry schedule and fallback window value~~ — settled 2026-09-18, see `spec/errors.md` §3.1: backoff 1 min doubling to 1 h cap, ±20 % jitter, `Retry-After` as lower bound; fallback window 2 h (1–4 h); give-up 5 days. Only connection/TLS failure or request-level 5xx falls back; `rate_limited`, `mailbox_full` and all per-recipient results never do
 - ~~pin max-age defaults~~ — settled 2026-09-18: recommended 7 days, senders clamp at 1 year. Still open: pin-failure reporting (TLS-RPT equivalent?)
 - ~~trace / `Authentication-Results` header format~~ — settled 2026-09-18, see `spec/signing.md` §8: `Received: … with IDMX id <idempotency-key>` plus `Authentication-Results: …; idmx=pass header.d=… header.s=…`. Still open: IANA registrations
 - settled 2026-09-18 (constants): size floor 25 MiB with no upper limit; idempotency retention and sender retry cap 7 days; signing domain must match exactly (no subdomain inheritance); key cache ≤ DNS TTL ≤ 1 h, negative ≤ 5 min
 - ~~per-recipient result schema~~ — settled 2026-09-18: request-level failures → 4xx/5xx problem; otherwise always `200` with `accepted` / `rejected` / `deferred` per recipient; deferred recipients are retried as a new delivery with a new key. Retry schedule for deferred recipients = `spec/errors.md` §3.1; deferred never falls back to SMTP
-- capabilities document schema; how to reserve room for first-contact friction and attestations
-- abuse-report contact format
+- ~~capabilities document schema~~ — settled 2026-09-18, see `spec/capabilities.md`: members are `versions`, `max_message_size` (required), `max_recipients`, `discovery_pin_max_age`, `abuse_contact`; **no `features`, no optional behavior in v1** — new behavior = new major version, mandatory there; `unsupported_feature` dropped. Caching: SHOULD `max-age=3600`, default 1 h, never older than 24 h. Unfetchable/invalid document → `temporary_failure` (fallback-eligible, no pin); out-of-range values used as advertised
+- ~~abuse-report contact format~~ — settled 2026-09-18: `abuse_contact` = one `mailto:` URI
 - list semantics (post-v1)
 - ~~major version negotiation~~ — settled 2026-09-18, see `spec/discovery.md` §5: capabilities lists all served majors in `versions` (absent = `["v1"]`), sender uses the highest common one, no path probing; no common version → SMTP fallback allowed immediately, even while pinned. Still open: deprecation window for old majors
 - trademark check for "IDMX"; registration of idmx.org

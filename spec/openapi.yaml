@@ -91,8 +91,6 @@ paths:
           $ref: '#/components/responses/Problem'
         '413':
           $ref: '#/components/responses/Problem'
-        '422':
-          $ref: '#/components/responses/Problem'
         '429':
           $ref: '#/components/responses/ProblemRetryAfter'
         '503':
@@ -104,9 +102,12 @@ paths:
     get:
       tags: [capabilities]
       operationId: getCapabilities
-      summary: Limits and optional feature flags of this receiver.
+      summary: Versions, limits, and operational parameters of this receiver.
       description: |
-        Cacheable (`Cache-Control`). Unsigned. No discover-by-failure. Each
+        Unsigned. No feature flags: v1 has no optional behavior
+        (capabilities.md §2). Receivers SHOULD send
+        `Cache-Control: max-age=3600`; senders assume 1 hour without it and
+        never use a document older than 24 hours (capabilities.md §4). Each
         successful fetch sets or refreshes the sender's discovery pin.
       responses:
         '200':
@@ -251,8 +252,9 @@ components:
     Capabilities:
       $id: https://idmx-project.org/schemas/v1/capabilities
       description: |
-        TODO(open question) — full schema; reserve room for first-contact
-        friction and attestations via `features`.
+        Versions, limits, and operational parameters (capabilities.md §3).
+        Members MUST NOT announce optional protocol behavior. Unknown members
+        MUST be ignored.
       type: object
       required: [max_message_size]
       properties:
@@ -287,13 +289,15 @@ components:
             (discovery.md §3). `0` or absent removes the pin. Receivers SHOULD
             advertise 604800 (7 days); senders treat values above 31557600
             (1 year) as 31557600.
-        features:
-          type: object
-          description: Optional feature flags. Unknown flags MUST be ignored.
-          additionalProperties: true
         abuse_contact:
           type: string
-          description: TODO(open question) — abuse-report contact format.
+          format: uri
+          pattern: '^mailto:[^?]+$'
+          description: |
+            Where to report abuse originating from the domains this receiver
+            serves. One `mailto:` URI (RFC 6068) without header fields.
+          examples:
+            - mailto:abuse@receiver.example
       additionalProperties: true
 
     Problem:
@@ -310,7 +314,6 @@ components:
             - https://idmx-project.org/problems/recipient_not_found
             - https://idmx-project.org/problems/invalid_signature
             - https://idmx-project.org/problems/unsupported_version
-            - https://idmx-project.org/problems/unsupported_feature
             - https://idmx-project.org/problems/temporary_failure
             - https://idmx-project.org/problems/rate_limited
             - https://idmx-project.org/problems/policy_rejected

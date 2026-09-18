@@ -72,8 +72,7 @@ See `test-vectors/signing-basic.body` for an exact byte sequence.
 | `from` | REQUIRED. Envelope sender (reverse-path): a mailbox (§3.1), or `null` for the null reverse-path used by DSNs. |
 | `to` | REQUIRED. 1 to `max_recipients` mailboxes, no duplicates, **all in the same domain**. |
 
-- Unknown fields MUST be ignored. This is the extension point for later
-  capabilities (e.g. sender attestations).
+- Unknown fields MUST be ignored.
 - If `from` is a mailbox, its domain MUST equal the signing domain
   (`signing.md` §2.5). If `from` is `null`, the signing domain alone identifies
   the sender.
@@ -168,7 +167,7 @@ SMTP**; at give-up they bounce.
 
 ## 6. Capabilities used by delivery
 
-From `GET /v1/capabilities`:
+From `GET /v1/capabilities` (full document: `capabilities.md`):
 
 | Field | Meaning |
 |---|---|
@@ -183,13 +182,12 @@ model.
 
 ### 7.1 How extensions arrive
 
-- As **feature flags** in the `features` object of `GET /v1/capabilities`. A
-  sender that does not know a flag ignores it; a receiver that does not offer a
-  feature never advertises it. No discover-by-failure.
-- As **new envelope or result fields**, which v1 implementations ignore.
-- Anything that cannot be expressed this way needs a new major version
-  (`/v2/`), selected through the capabilities `versions` list
-  (`discovery.md` §5).
+- v1 has **no optional behavior and no feature flags** (`capabilities.md` §2).
+- New protocol behavior needs a new major version (`/v2/`), where it is
+  mandatory, selected through the capabilities `versions` list
+  (`discovery.md` §5). No discover-by-failure.
+- Minor revisions of v1 only add informational fields and limits, which older
+  implementations ignore.
 
 ### 7.2 Large messages
 
@@ -224,5 +222,5 @@ Constraints for either design:
 ### 7.3 Abuse controls
 
 First-contact friction and sender attestations (`docs/IDMX_IDEAS.md`, "Abuse
-and Spam") are expected to arrive as feature flags plus optional envelope
-fields.
+and Spam") are candidates for a later major version. The ignored-unknown-fields
+rule keeps the envelope and result formats extensible for them.

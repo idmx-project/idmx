@@ -22,7 +22,6 @@ per-recipient `problem` inside a `200` result (`delivery.md` §5).
 | `unsupported_version` | R | 404 | permanent | no | **allowed**, immediately (§3) |
 | `idempotency_conflict` | R | 409 | permanent | no | never |
 | `message_too_large` | R | 413 | permanent | no | never |
-| `unsupported_feature` | R | 422 | permanent | no | never |
 | `rate_limited` | R, P | 429 | temporary | yes, honor `Retry-After` / `retry_after` | never |
 | `mailbox_full` | P | — | temporary | yes | never |
 | `temporary_failure` | R, P | 503 | temporary | yes | after fallback window (R only); never (P) |
@@ -35,7 +34,8 @@ per-recipient `problem` inside a `200` result (`delivery.md` §5).
 - Senders MUST treat an unknown problem `type` by its HTTP status class: 4xx
   permanent, 5xx temporary; inside a result, by the result `status`.
 - A 5xx without a problem document, a connection failure, or a TLS failure is
-  handled as `temporary_failure`.
+  handled as `temporary_failure`. So is a capabilities document that cannot be
+  fetched or is invalid (`capabilities.md` §5).
 
 ## 3. Fallback rule
 
@@ -43,7 +43,7 @@ per-recipient `problem` inside a `200` result (`delivery.md` §5).
   fallback window (§3.1), then fall back to SMTP**. This is the only case that
   falls back: a connection failure, a TLS failure, or a request-level 5xx.
 - **Any other authenticated IDMX answer never falls back**: 4xx problems
-  (including `rate_limited` and `unsupported_feature`) and every per-recipient
+  (including `rate_limited`) and every per-recipient
   result (`rejected` or `deferred`, including `mailbox_full`). SMTP must not
   bypass a deliberate IDMX rejection or throttle, and a full mailbox is just as
   full over SMTP. Temporary ones are retried over IDMX until give-up (§3.1).
@@ -107,7 +107,6 @@ delivery with a new idempotency key.
 ## 8. Abuse hooks (v1)
 
 - `rate_limited` / `policy_rejected` with `Retry-After`.
-- Abuse-report contact advertised via capabilities.
+- Abuse-report contact: `abuse_contact` in capabilities, a `mailto:` URI
+  (`capabilities.md` §3).
 - Reputation and filtering stay receiver-local policy.
-
-TODO: abuse-report contact format.

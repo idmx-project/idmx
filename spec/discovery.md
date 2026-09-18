@@ -67,14 +67,14 @@ handles RR type 64; there is no substitute record type.
 
 - A pin is `(recipient domain → SVCB result, expiry)`.
 - The pin lifetime comes from **`discovery_pin_max_age`** (seconds) in the
-  receiver's `GET /v1/capabilities` document, i.e. over authenticated TLS 1.3,
-  never from DNS.
+  receiver's `GET /v1/capabilities` document (`capabilities.md`), i.e. over
+  authenticated TLS 1.3, never from DNS.
 - The pin is set or refreshed on every successful capabilities fetch.
   `discovery_pin_max_age: 0` (or absent) removes the pin.
 - Receivers SHOULD advertise **604 800** (7 days). Senders MUST treat values
   above **31 557 600** (1 year) as 31 557 600.
-- Senders SHOULD refetch capabilities at least as often as its HTTP cache
-  lifetime allows, and before a pin expires.
+- Senders refetch capabilities as its cache lifetime requires
+  (`capabilities.md` §4), and SHOULD refetch before a pin expires.
 
 ### 3.2 Decision table
 
@@ -111,8 +111,9 @@ TODO: pin-failure reporting (TLS-RPT equivalent?).
 ## 5. Version selection
 
 The major version lives in the URL path. Minor evolution inside a major
-version needs no negotiation (unknown fields are ignored, optional behavior is
-announced as `features` flags).
+version needs no negotiation: it is additive and informational only (unknown
+fields are ignored). There is no optional behavior inside a major version
+(`capabilities.md` §2).
 
 - Every capabilities document (`GET /vN/capabilities`) lists **all** major
   versions the receiver serves in `versions`, e.g. `["v1", "v2"]`. An absent
