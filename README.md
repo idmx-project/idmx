@@ -5,7 +5,8 @@ mail delivery while preserving existing `user@domain` addresses and SMTP
 compatibility.
 
 **Status: experimental.** Nothing here is stable. The spec is an early draft
-and the crates implement only signing and discovery so far.
+and the reference implementation covers signing, discovery, and the receiver
+(`idmxd`); the sender, fallback, and devnet are still missing.
 
 ## Layout
 

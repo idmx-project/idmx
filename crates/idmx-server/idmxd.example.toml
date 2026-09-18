@@ -1,0 +1,34 @@
+# Example configuration for idmxd. Usage: idmxd /etc/idmxd.toml
+
+# Mail domain this receiver is responsible for (the part after the @).
+domain = "receiver.example"
+
+# host[:port] that senders reach this receiver at, i.e. the target (and port,
+# unless 443) of the SVCB record on _idmx.<domain>. Requests signed for any
+# other authority are refused. The host part is also used in trace headers.
+authority = "idmx.receiver.example"
+
+listen = "0.0.0.0:443"
+
+# Maildirs (data_dir/mail/<maildir>) and the idempotency log live here.
+data_dir = "/var/lib/idmxd"
+
+# Optional; defaults are the floors mandated by the spec.
+# max_message_size = 26214400
+# max_recipients = 100
+
+# Seconds senders may pin this domain's IDMX support. 0 = no pinning.
+discovery_pin_max_age = 0
+
+# Omit this section to serve plain HTTP/2 behind a TLS 1.3 terminating proxy.
+[tls]
+cert = "/etc/idmxd/fullchain.pem"
+key = "/etc/idmxd/privkey.pem"
+
+[[mailbox]]
+address = "bob@receiver.example"
+
+[[mailbox]]
+address = "o'brien@receiver.example"
+# Required when the local part is not a safe directory name.
+maildir = "obrien"
