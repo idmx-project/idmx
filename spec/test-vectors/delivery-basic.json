@@ -1,0 +1,12 @@
+{
+  "description": "Request body layout of delivery.md section 2. Decoding body_file with content_type must yield exactly this envelope and the bytes of message_file. Encoders are free to choose another boundary and JSON spelling.",
+  "content_type": "multipart/mixed; boundary=idmx-boundary",
+  "body_file": "signing-basic.body",
+  "envelope": {
+    "from": "alice@sender.example",
+    "to": [
+      "bob@receiver.example"
+    ]
+  },
+  "message_file": "delivery-basic.eml"
+}

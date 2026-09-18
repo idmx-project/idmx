@@ -1,1 +1,2 @@
 spec/test-vectors/*.body -text
+spec/test-vectors/*.eml -text

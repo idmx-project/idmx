@@ -1,0 +1,24 @@
+{
+  "description": "A 200 response body of delivery.md section 5.2 with one recipient per status.",
+  "results": [
+    {
+      "recipient": "bob@receiver.example",
+      "status": "accepted"
+    },
+    {
+      "recipient": "nobody@receiver.example",
+      "status": "rejected",
+      "problem": {
+        "type": "https://idmx-project.org/problems/recipient_not_found"
+      }
+    },
+    {
+      "recipient": "carol@receiver.example",
+      "status": "deferred",
+      "problem": {
+        "type": "https://idmx-project.org/problems/mailbox_full"
+      },
+      "retry_after": 3600
+    }
+  ]
+}
