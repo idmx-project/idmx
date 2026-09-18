@@ -1,12 +1,13 @@
 //! Black-box conformance checks for IDMX receivers.
 //!
 //! [`run`] talks to a receiver over HTTP only and knows nothing about its
-//! implementation. This first set needs no sender identity: it covers the
-//! capabilities document, version handling, transport, and the rejection of
-//! unsigned deliveries. Checks that need a signed delivery (and therefore a
-//! key the receiver can resolve) are not part of it yet.
+//! implementation. Without a [`DeliveryProbe`] it covers what needs no sender
+//! identity: the capabilities document, version handling, transport, and the
+//! rejection of unsigned deliveries. With one it also sends signed deliveries
+//! (signature checks, request validation, idempotency, per-recipient results).
 
 mod capabilities;
+pub mod delivery;
 pub mod report;
 
 use std::str::FromStr;
@@ -15,6 +16,7 @@ use reqwest::header::{CACHE_CONTROL, CONTENT_TYPE};
 use reqwest::{Client, Response, StatusCode, Url, Version};
 use serde_json::{Map, Value};
 
+use crate::delivery::DeliveryProbe;
 use crate::report::{Check, Level, Outcome, Report};
 
 const PROBLEM_BASE: &str = "https://idmx-project.org/problems/";
@@ -56,6 +58,15 @@ impl Origin {
         self.0.scheme() == "http"
     }
 
+    /// `host[:port]` as it appears in `@authority`: no port when it is the
+    /// scheme's default.
+    fn authority(&self) -> String {
+        let host = self.0.host_str().unwrap_or_default();
+        self.0
+            .port()
+            .map_or_else(|| host.to_owned(), |port| format!("{host}:{port}"))
+    }
+
     fn url(&self, path: &str) -> Url {
         let mut url = self.0.clone();
         url.set_path(path);
@@ -71,11 +82,15 @@ pub fn http_client_builder() -> reqwest::ClientBuilder {
     Client::builder().tls_version_min(reqwest::tls::Version::TLS_1_3)
 }
 
-/// Runs every check against the receiver at `origin`.
-pub async fn run(http: &Client, origin: &Origin) -> Report {
+/// Runs every check against the receiver at `origin`; the signed ones only
+/// with a `probe`. They deliver probe messages to the probe's recipient.
+pub async fn run(http: &Client, origin: &Origin, probe: Option<&DeliveryProbe>) -> Report {
     let mut checks = check_capabilities(http, origin).await;
     checks.push(check_unknown_version(http, origin).await);
     checks.push(check_unsigned_delivery(http, origin).await);
+    if let Some(probe) = probe {
+        checks.extend(probe.run(http, origin).await);
+    }
     Report { checks }
 }
 
@@ -164,7 +179,7 @@ async fn check_unsigned_delivery(http: &Client, origin: &Origin) -> Check {
 }
 
 /// Sends `request` and expects an RFC 9457 problem of the given kind.
-async fn expect_problem(
+pub(crate) async fn expect_problem(
     request: reqwest::RequestBuilder,
     expected_status: StatusCode,
     expected_kind: &str,

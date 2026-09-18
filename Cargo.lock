@@ -947,6 +947,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
+ "ed25519-dalek",
  "idmx-core",
  "idmx-server",
  "reqwest",
