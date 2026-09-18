@@ -11,6 +11,7 @@ use hickory_resolver::proto::rr::rdata::SVCB;
 use hickory_resolver::proto::rr::rdata::svcb::{SvcParamKey, SvcParamValue};
 use hickory_resolver::proto::rr::{Name, RData, RecordType};
 
+use crate::domain::Domain;
 use crate::key::{KeyId, KeyRecord, KeyRecordError};
 
 const DEFAULT_PORT: u16 = 443;
@@ -20,15 +21,31 @@ const MAX_ALIAS_HOPS: usize = 4;
 /// One IDMX origin advertised by a `ServiceMode` SVCB record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Endpoint {
-    /// SVCB `TargetName` without trailing dot; the TLS certificate must match it.
-    pub host: String,
-    /// TCP (and, for HTTP/3, UDP) port.
-    pub port: u16,
-    /// Whether the record advertises `alpn=h3` in addition to mandatory `h2`.
-    pub http3: bool,
+    host: String,
+    port: u16,
+    http3: bool,
 }
 
 impl Endpoint {
+    /// SVCB `TargetName`, lower case, without trailing dot; the TLS
+    /// certificate must match it.
+    #[must_use]
+    pub fn host(&self) -> &str {
+        &self.host
+    }
+
+    /// TCP (and, for HTTP/3, UDP) port.
+    #[must_use]
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    /// Whether the record advertises `alpn=h3` in addition to mandatory `h2`.
+    #[must_use]
+    pub fn supports_http3(&self) -> bool {
+        self.http3
+    }
+
     /// The `@authority` value for requests to this endpoint: `host`, with
     /// `:port` unless the port is 443.
     #[must_use]
@@ -54,9 +71,9 @@ pub enum Discovery {
 /// failures; without one the sender uses SMTP (`spec/discovery.md` §3.2).
 #[derive(Debug, thiserror::Error)]
 pub enum DiscoveryError {
-    /// The domain is not a valid DNS name.
-    #[error("`{0}` is not a valid domain name")]
-    InvalidDomain(String),
+    /// `_idmx.<domain>` is not a valid DNS name (the domain is too long).
+    #[error("`_idmx.{0}` is not a valid DNS name")]
+    InvalidOwnerName(Domain),
     /// `AliasMode` records chain further than this implementation follows.
     #[error("SVCB alias chain is too long")]
     AliasChainTooLong,
@@ -67,14 +84,15 @@ pub enum DiscoveryError {
 
 /// Looks up `_idmx.<domain>` and follows `AliasMode` records.
 ///
-/// `domain` must be in IDNA A-label form.
-///
 /// # Errors
 ///
-/// Returns [`DiscoveryError`] if the name is invalid or the lookup fails for a
+/// Returns [`DiscoveryError`] if the owner name is invalid or the lookup fails for a
 /// reason other than "no such record".
-pub async fn discover(resolver: &TokioResolver, domain: &str) -> Result<Discovery, DiscoveryError> {
-    let invalid_domain = |_| DiscoveryError::InvalidDomain(domain.to_owned());
+pub async fn discover(
+    resolver: &TokioResolver,
+    domain: &Domain,
+) -> Result<Discovery, DiscoveryError> {
+    let invalid_domain = |_| DiscoveryError::InvalidOwnerName(domain.clone());
     let mut owner = Name::from_ascii(format!("_idmx.{domain}.")).map_err(invalid_domain)?;
 
     for _ in 0..=MAX_ALIAS_HOPS {

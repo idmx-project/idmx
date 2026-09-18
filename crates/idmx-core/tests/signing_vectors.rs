@@ -53,6 +53,10 @@ impl Vector {
         SigningKey::from_bytes(&seed)
     }
 
+    fn published_key(&self) -> KeyRecord {
+        self.str("/key_record_txt").parse().unwrap()
+    }
+
     fn expected_headers(&self) -> SignatureHeaders {
         SignatureHeaders {
             content_digest: self.str("/expected/content_digest").to_owned(),
@@ -98,9 +102,6 @@ fn parse_builds_expected_signature_base() {
 #[test]
 fn expected_signature_verifies_with_published_key_record() {
     let vector = Vector::load();
-    let KeyRecord::Active(key) = vector.str("/key_record_txt").parse().unwrap() else {
-        panic!("vector key record must be active");
-    };
     let unverified = UnverifiedSignature::parse(
         &vector.request(),
         &vector.expected_headers(),
@@ -108,9 +109,9 @@ fn expected_signature_verifies_with_published_key_record() {
     )
     .unwrap();
 
-    let result = unverified.verify(&key);
+    let verified = unverified.verify(&vector.published_key()).unwrap();
 
-    assert_eq!(result, Ok(()));
+    assert_eq!(verified.signing_domain().as_str(), "sender.example");
 }
 
 #[test]
@@ -158,9 +159,9 @@ fn verify_rejects_request_replayed_to_other_authority() {
     let unverified =
         UnverifiedSignature::parse(&request, &vector.expected_headers(), vector.created()).unwrap();
 
-    let result = unverified.verify(&vector.signing_key().verifying_key());
+    let result = unverified.verify(&vector.published_key());
 
-    assert_eq!(result, Err(VerifyError::BadSignature));
+    assert_eq!(result.unwrap_err(), VerifyError::BadSignature);
 }
 
 #[test]
@@ -173,9 +174,9 @@ fn verify_rejects_swapped_idempotency_key() {
     let unverified =
         UnverifiedSignature::parse(&request, &vector.expected_headers(), vector.created()).unwrap();
 
-    let result = unverified.verify(&vector.signing_key().verifying_key());
+    let result = unverified.verify(&vector.published_key());
 
-    assert_eq!(result, Err(VerifyError::BadSignature));
+    assert_eq!(result.unwrap_err(), VerifyError::BadSignature);
 }
 
 #[test]
@@ -237,4 +238,19 @@ fn parse_rejects_headers_without_idmx_tag() {
     let result = UnverifiedSignature::parse(&vector.request(), &headers, vector.created());
 
     assert_eq!(result.unwrap_err(), VerifyError::NoSignature);
+}
+
+#[test]
+fn verify_rejects_revoked_key() {
+    let vector = Vector::load();
+    let unverified = UnverifiedSignature::parse(
+        &vector.request(),
+        &vector.expected_headers(),
+        vector.created(),
+    )
+    .unwrap();
+
+    let result = unverified.verify(&KeyRecord::Revoked);
+
+    assert_eq!(result.unwrap_err(), VerifyError::KeyRevoked);
 }

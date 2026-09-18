@@ -1,16 +1,18 @@
 //! The IDMX profile of HTTP Message Signatures (RFC 9421), `spec/signing.md`.
 //!
 //! Senders call [`sign`]. Receivers call [`UnverifiedSignature::parse`], fetch
-//! the key named by [`UnverifiedSignature::keyid`], and finish with
-//! [`UnverifiedSignature::verify`].
+//! the key record named by [`UnverifiedSignature::keyid`], and finish with
+//! [`UnverifiedSignature::verify`], which is the only way to obtain a
+//! [`VerifiedSignature`].
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use ed25519_dalek::{Signature, Signer as _, SigningKey, VerifyingKey};
+use ed25519_dalek::{Signature, Signer as _, SigningKey};
 use sfv::{BareItem, Dictionary, FieldType as _, InnerList, Item, Key, ListEntry, Parser};
 use sha2::{Digest as _, Sha256};
 
-use crate::key::{KeyId, KeyIdError};
+use crate::domain::Domain;
+use crate::key::{KeyId, KeyIdError, KeyRecord};
 
 /// Signature label used by senders. Receivers select by `tag`, not by label.
 const LABEL: &str = "idmx";
@@ -22,7 +24,7 @@ const DIGEST_ALGORITHM: &str = "sha-256";
 pub const MAX_CLOCK_SKEW: Duration = Duration::from_mins(5);
 
 /// Components every IDMX signature covers, in this order.
-pub const COVERED_COMPONENTS: [&str; 7] = [
+const COVERED_COMPONENTS: [&str; 7] = [
     "@method",
     "@authority",
     "@path",
@@ -88,7 +90,7 @@ pub enum VerifyError {
     /// More than one signature carries `tag="idmx-v1"`.
     #[error("more than one signature with tag \"idmx-v1\"")]
     MultipleSignatures,
-    /// The covered components differ from [`COVERED_COMPONENTS`].
+    /// The covered components differ from the list in `spec/signing.md` §2.3.
     #[error("covered components do not match the IDMX profile")]
     CoveredComponents,
     /// A required signature parameter is missing or has the wrong type.
@@ -115,6 +117,9 @@ pub enum VerifyError {
     /// A request component contains a line break or is otherwise unusable.
     #[error("request component `{0}` cannot be verified")]
     InvalidComponent(&'static str),
+    /// The key record has an empty `p=`.
+    #[error("signing key is revoked")]
+    KeyRevoked,
     /// The Ed25519 signature does not verify.
     #[error("signature verification failed")]
     BadSignature,
@@ -136,11 +141,11 @@ pub enum VerifyError {
 /// use std::time::SystemTime;
 ///
 /// use ed25519_dalek::SigningKey;
-/// use idmx_core::key::KeyId;
+/// use idmx_core::key::{KeyId, KeyRecord};
 /// use idmx_core::signing::{Request, UnverifiedSignature, sign};
 ///
 /// let key = SigningKey::from_bytes(&[7; 32]);
-/// let keyid = KeyId::new("s1", "sender.example")?;
+/// let keyid = KeyId::new("s1", &"sender.example".parse()?)?;
 /// let request = Request {
 ///     method: "POST",
 ///     authority: "idmx.receiver.example",
@@ -155,7 +160,9 @@ pub enum VerifyError {
 ///
 /// let unverified = UnverifiedSignature::parse(&request, &headers, now)?;
 /// assert_eq!(unverified.keyid(), &keyid);
-/// unverified.verify(&key.verifying_key())?;
+/// let published = KeyRecord::Active(key.verifying_key());
+/// let verified = unverified.verify(&published)?;
+/// assert_eq!(verified.signing_domain().as_str(), "sender.example");
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub fn sign(
@@ -181,6 +188,7 @@ pub fn sign(
 /// A received signature whose profile, timestamp, and content digest have been
 /// checked, but whose Ed25519 signature has not.
 #[derive(Debug, Clone)]
+#[must_use = "an unverified signature authenticates nothing; call `verify`"]
 pub struct UnverifiedSignature {
     keyid: KeyId,
     created: SystemTime,
@@ -239,20 +247,61 @@ impl UnverifiedSignature {
         self.created
     }
 
-    /// Verifies the Ed25519 signature with the key fetched for [`Self::keyid`].
+    /// Verifies the Ed25519 signature with the record fetched for
+    /// [`Self::keyid`], consuming the unverified state.
     ///
     /// # Errors
     ///
-    /// Returns [`VerifyError::BadSignature`] if the signature does not verify.
-    pub fn verify(&self, key: &VerifyingKey) -> Result<(), VerifyError> {
+    /// Returns [`VerifyError::KeyRevoked`] for a revoked record and
+    /// [`VerifyError::BadSignature`] if the signature does not verify.
+    pub fn verify(self, record: &KeyRecord) -> Result<VerifiedSignature, VerifyError> {
+        let key = match record {
+            KeyRecord::Active(key) => key,
+            KeyRecord::Revoked => return Err(VerifyError::KeyRevoked),
+        };
         key.verify_strict(self.base.as_bytes(), &self.signature)
-            .map_err(|_| VerifyError::BadSignature)
+            .map_err(|_| VerifyError::BadSignature)?;
+        Ok(VerifiedSignature {
+            keyid: self.keyid,
+            created: self.created,
+        })
     }
 
     /// The RFC 9421 signature base the signature is checked against.
     #[must_use]
     pub fn signature_base(&self) -> &str {
         &self.base
+    }
+}
+
+/// Proof that a request was signed by [`Self::signing_domain`]. Only
+/// [`UnverifiedSignature::verify`] creates it.
+///
+/// Receivers must still check that the envelope `from` domain equals the
+/// signing domain (`spec/signing.md` §2.5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedSignature {
+    keyid: KeyId,
+    created: SystemTime,
+}
+
+impl VerifiedSignature {
+    /// The domain that authorized the delivery.
+    #[must_use]
+    pub fn signing_domain(&self) -> &Domain {
+        self.keyid.domain()
+    }
+
+    /// The key that made the signature.
+    #[must_use]
+    pub fn keyid(&self) -> &KeyId {
+        &self.keyid
+    }
+
+    /// The signing time claimed by the sender.
+    #[must_use]
+    pub fn created(&self) -> SystemTime {
+        self.created
     }
 }
 

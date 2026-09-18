@@ -7,6 +7,8 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use ed25519_dalek::VerifyingKey;
 
+use crate::domain::{Domain, DomainError};
+
 /// DNS label that separates the selector from the signing domain.
 const KEY_LABEL: &str = "._idmxkey.";
 
@@ -16,9 +18,12 @@ pub enum KeyIdError {
     /// The name does not contain the `_idmxkey` label.
     #[error("keyid is not of the form <selector>._idmxkey.<domain>")]
     MissingKeyLabel,
-    /// Selector or domain is empty, or the name ends with a dot.
-    #[error("keyid has an empty selector or domain, or a trailing dot")]
-    EmptyPart,
+    /// The selector is not a sequence of non-empty DNS labels.
+    #[error("keyid selector is empty or has an empty label")]
+    Selector,
+    /// The part after `_idmxkey` is not a valid domain.
+    #[error("keyid signing domain is invalid: {0}")]
+    Domain(#[from] DomainError),
     /// The name contains upper-case characters.
     #[error("keyid must be lower case")]
     NotLowerCase,
@@ -34,13 +39,14 @@ pub enum KeyIdError {
 ///
 /// let keyid: KeyId = "s1._idmxkey.sender.example".parse()?;
 /// assert_eq!(keyid.selector(), "s1");
-/// assert_eq!(keyid.domain(), "sender.example");
+/// assert_eq!(keyid.domain().as_str(), "sender.example");
 /// # Ok::<(), idmx_core::key::KeyIdError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct KeyId {
     name: String,
     selector_len: usize,
+    domain: Domain,
 }
 
 impl KeyId {
@@ -49,7 +55,7 @@ impl KeyId {
     /// # Errors
     ///
     /// Returns [`KeyIdError`] if the resulting name is not a valid key id.
-    pub fn new(selector: &str, domain: &str) -> Result<Self, KeyIdError> {
+    pub fn new(selector: &str, domain: &Domain) -> Result<Self, KeyIdError> {
         format!("{selector}{KEY_LABEL}{domain}").parse()
     }
 
@@ -61,8 +67,8 @@ impl KeyId {
 
     /// The signing domain.
     #[must_use]
-    pub fn domain(&self) -> &str {
-        &self.name[self.selector_len + KEY_LABEL.len()..]
+    pub fn domain(&self) -> &Domain {
+        &self.domain
     }
 
     /// The full DNS name of the key record.
@@ -79,15 +85,16 @@ impl FromStr for KeyId {
         let Some((selector, domain)) = name.split_once(KEY_LABEL) else {
             return Err(KeyIdError::MissingKeyLabel);
         };
-        if selector.is_empty() || domain.is_empty() || domain.ends_with('.') {
-            return Err(KeyIdError::EmptyPart);
-        }
         if name.chars().any(|c| c.is_ascii_uppercase()) {
             return Err(KeyIdError::NotLowerCase);
+        }
+        if selector.split('.').any(str::is_empty) {
+            return Err(KeyIdError::Selector);
         }
         Ok(Self {
             name: name.to_owned(),
             selector_len: selector.len(),
+            domain: domain.parse()?,
         })
     }
 }
@@ -195,7 +202,7 @@ mod tests {
             let keyid: KeyId = "a.b._idmxkey.sender.example".parse().unwrap();
 
             assert_eq!(
-                (keyid.selector(), keyid.domain()),
+                (keyid.selector(), keyid.domain().as_str()),
                 ("a.b", "sender.example")
             );
         }
@@ -211,7 +218,7 @@ mod tests {
         fn rejects_trailing_dot() {
             let result = "s1._idmxkey.sender.example.".parse::<KeyId>();
 
-            assert_eq!(result, Err(KeyIdError::EmptyPart));
+            assert_eq!(result, Err(KeyIdError::Domain(DomainError::Label)));
         }
 
         #[test]

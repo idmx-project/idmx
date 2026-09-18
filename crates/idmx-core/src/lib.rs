@@ -1,5 +1,6 @@
 //! Core building blocks for IDMX (Inter-Domain Mail Exchange).
 //!
+//! - [`domain`]: the validated DNS domain, IDMX's unit of identity.
 //! - [`key`]: key identifiers and the DNS key record (`spec/signing.md` §4).
 //! - [`signing`]: the RFC 9421 signing profile (`spec/signing.md` §2, §3, §7).
 //! - [`discovery`]: SVCB discovery on `_idmx.<domain>` and key lookup
@@ -9,5 +10,6 @@
 //! specification and never defines it.
 
 pub mod discovery;
+pub mod domain;
 pub mod key;
 pub mod signing;
