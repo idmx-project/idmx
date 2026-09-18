@@ -341,7 +341,9 @@ fn serialize_bytes(bytes: &[u8]) -> String {
     Item::new(BareItem::ByteSequence(bytes.to_vec())).serialize()
 }
 
-fn content_digest(body: &[u8]) -> String {
+/// The `Content-Digest` header value for `body`: `sha-256=:<base64>:`.
+#[must_use]
+pub fn content_digest(body: &[u8]) -> String {
     format!(
         "{DIGEST_ALGORITHM}={}",
         serialize_bytes(&Sha256::digest(body))

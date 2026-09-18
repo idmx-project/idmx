@@ -3,6 +3,8 @@
 use std::fmt;
 use std::str::FromStr;
 
+use serde::{Deserialize, Serialize};
+
 const MAX_DOMAIN_LEN: usize = 253;
 const MAX_LABEL_LEN: usize = 63;
 
@@ -33,7 +35,8 @@ pub enum DomainError {
 /// assert_eq!(domain.as_str(), "sender.example");
 /// # Ok::<(), idmx_core::domain::DomainError>(())
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct Domain(String);
 
 impl Domain {
@@ -54,6 +57,20 @@ impl FromStr for Domain {
         }
         name.split('.').try_for_each(check_label)?;
         Ok(Self(name.to_ascii_lowercase()))
+    }
+}
+
+impl TryFrom<String> for Domain {
+    type Error = DomainError;
+
+    fn try_from(name: String) -> Result<Self, Self::Error> {
+        name.parse()
+    }
+}
+
+impl From<Domain> for String {
+    fn from(domain: Domain) -> Self {
+        domain.0
     }
 }
 
