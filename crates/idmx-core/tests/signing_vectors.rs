@@ -5,6 +5,8 @@ use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ed25519_dalek::SigningKey;
+use idmx_core::envelope::ReversePath;
+use idmx_core::idempotency::IdempotencyKey;
 use idmx_core::key::{KeyId, KeyRecord};
 use idmx_core::signing::{
     MAX_CLOCK_SKEW, Request, SignatureHeaders, UnverifiedSignature, VerifyError, sign,
@@ -14,6 +16,7 @@ use serde_json::Value;
 struct Vector {
     json: Value,
     body: Vec<u8>,
+    idempotency_key: IdempotencyKey,
 }
 
 impl Vector {
@@ -23,7 +26,16 @@ impl Vector {
             serde_json::from_slice(&std::fs::read(dir.join("signing-basic.json")).unwrap())
                 .unwrap();
         let body = std::fs::read(dir.join(json["request"]["body_file"].as_str().unwrap())).unwrap();
-        Self { json, body }
+        let idempotency_key = json["request"]["idempotency_key"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        Self {
+            json,
+            body,
+            idempotency_key,
+        }
     }
 
     fn str(&self, pointer: &str) -> &str {
@@ -36,7 +48,7 @@ impl Vector {
             authority: self.str("/request/authority"),
             path: self.str("/request/path"),
             content_type: self.str("/request/content_type"),
-            idempotency_key: self.str("/request/idempotency_key"),
+            idempotency_key: &self.idempotency_key,
             body: &self.body,
         }
     }
@@ -167,8 +179,9 @@ fn verify_rejects_request_replayed_to_other_authority() {
 #[test]
 fn verify_rejects_swapped_idempotency_key() {
     let vector = Vector::load();
+    let other_key: IdempotencyKey = "01J8ZQ4M9X6T3V5B7N2K0HXXXX".parse().unwrap();
     let request = Request {
-        idempotency_key: "01J8ZQ4M9X6T3V5B7N2K0HXXXX",
+        idempotency_key: &other_key,
         ..vector.request()
     };
     let unverified =
@@ -253,4 +266,43 @@ fn verify_rejects_revoked_key() {
     let result = unverified.verify(&KeyRecord::Revoked);
 
     assert_eq!(result.unwrap_err(), VerifyError::KeyRevoked);
+}
+
+fn verified(vector: &Vector) -> idmx_core::signing::VerifiedSignature {
+    UnverifiedSignature::parse(
+        &vector.request(),
+        &vector.expected_headers(),
+        vector.created(),
+    )
+    .unwrap()
+    .verify(&vector.published_key())
+    .unwrap()
+}
+
+#[test]
+fn check_sender_accepts_mailbox_in_signing_domain() {
+    let from = ReversePath::Mailbox("alice@sender.example".parse().unwrap());
+
+    let result = verified(&Vector::load()).check_sender(&from);
+
+    assert_eq!(result, Ok(()));
+}
+
+#[test]
+fn check_sender_accepts_null_reverse_path() {
+    let result = verified(&Vector::load()).check_sender(&ReversePath::Null);
+
+    assert_eq!(result, Ok(()));
+}
+
+#[test]
+fn check_sender_rejects_mailbox_in_subdomain_of_signing_domain() {
+    let from = ReversePath::Mailbox("alice@sub.sender.example".parse().unwrap());
+
+    let result = verified(&Vector::load()).check_sender(&from);
+
+    assert!(
+        matches!(result, Err(VerifyError::SenderDomainMismatch { .. })),
+        "unexpected: {result:?}"
+    );
 }

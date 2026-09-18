@@ -12,6 +12,8 @@ use sfv::{BareItem, Dictionary, FieldType as _, InnerList, Item, Key, ListEntry,
 use sha2::{Digest as _, Sha256};
 
 use crate::domain::Domain;
+use crate::envelope::ReversePath;
+use crate::idempotency::IdempotencyKey;
 use crate::key::{KeyId, KeyIdError, KeyRecord};
 
 /// Signature label used by senders. Receivers select by `tag`, not by label.
@@ -48,8 +50,8 @@ pub struct Request<'a> {
     pub path: &'a str,
     /// Value of the `Content-Type` header.
     pub content_type: &'a str,
-    /// Value of the `Idempotency-Key` header.
-    pub idempotency_key: &'a str,
+    /// The `Idempotency-Key` header.
+    pub idempotency_key: &'a IdempotencyKey,
     /// Exact bytes of the HTTP content.
     pub body: &'a [u8],
 }
@@ -120,6 +122,14 @@ pub enum VerifyError {
     /// The key record has an empty `p=`.
     #[error("signing key is revoked")]
     KeyRevoked,
+    /// The envelope sender's domain is not the signing domain.
+    #[error("envelope sender domain `{from}` does not match signing domain `{signing}`")]
+    SenderDomainMismatch {
+        /// Domain of the envelope `from`.
+        from: Domain,
+        /// Domain of the `keyid`.
+        signing: Domain,
+    },
     /// The Ed25519 signature does not verify.
     #[error("signature verification failed")]
     BadSignature,
@@ -151,7 +161,7 @@ pub enum VerifyError {
 ///     authority: "idmx.receiver.example",
 ///     path: "/v1/messages",
 ///     content_type: "multipart/mixed; boundary=idmx",
-///     idempotency_key: "01J8ZQ4M9X6T3V5B7N2K0HCDEF",
+///     idempotency_key: &"01J8ZQ4M9X6T3V5B7N2K0HCDEF".parse()?,
 ///     body: b"...",
 /// };
 /// let now = SystemTime::now();
@@ -277,8 +287,8 @@ impl UnverifiedSignature {
 /// Proof that a request was signed by [`Self::signing_domain`]. Only
 /// [`UnverifiedSignature::verify`] creates it.
 ///
-/// Receivers must still check that the envelope `from` domain equals the
-/// signing domain (`spec/signing.md` §2.5).
+/// Receivers must still call [`Self::check_sender`] with the envelope sender
+/// (`spec/signing.md` §2.5).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedSignature {
     keyid: KeyId,
@@ -290,6 +300,24 @@ impl VerifiedSignature {
     #[must_use]
     pub fn signing_domain(&self) -> &Domain {
         self.keyid.domain()
+    }
+
+    /// Verification step 6: a mailbox sender must be in the signing domain;
+    /// the null reverse-path is covered by the signing domain alone.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VerifyError::SenderDomainMismatch`] otherwise.
+    pub fn check_sender(&self, from: &ReversePath) -> Result<(), VerifyError> {
+        match from {
+            ReversePath::Mailbox(mailbox) if mailbox.domain() != self.signing_domain() => {
+                Err(VerifyError::SenderDomainMismatch {
+                    from: mailbox.domain().clone(),
+                    signing: self.signing_domain().clone(),
+                })
+            }
+            ReversePath::Mailbox(_) | ReversePath::Null => Ok(()),
+        }
     }
 
     /// The key that made the signature.
@@ -362,7 +390,7 @@ fn signature_base(
         content_digest,
         request.content_type,
         &content_length,
-        request.idempotency_key,
+        request.idempotency_key.as_str(),
     ];
 
     let mut lines = Vec::with_capacity(COVERED_COMPONENTS.len() + 1);

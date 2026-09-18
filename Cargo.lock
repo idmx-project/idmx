@@ -547,6 +547,7 @@ dependencies = [
  "ed25519-dalek",
  "hex",
  "hickory-resolver",
+ "serde",
  "serde_json",
  "sfv",
  "sha2",
