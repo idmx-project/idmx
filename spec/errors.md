@@ -1,6 +1,7 @@
 # IDMX Errors, Retries, and SMTP Fallback
 
-Status: **draft skeleton**. Decisions copied from `docs/IDMX_IDEAS.md` (Decisions, 2026-09-17).
+Status: **draft**. Baseline: `docs/IDMX_IDEAS.md` (Decisions, 2026-09-17) plus the
+error and retry decisions of 2026-09-18 recorded here.
 License: CC-BY-4.0 (see `LICENSE`).
 
 ## 1. Error model
@@ -28,7 +29,9 @@ per-recipient `problem` inside a `200` result (`delivery.md` §5).
 
 - `unsupported_version` is the answer to any path under an unknown major
   version (e.g. `/v2/...`). Senders avoid it by selecting a version from the
-  capabilities `versions` list (`discovery.md` §5).
+  capabilities `versions` list (`discovery.md` §5). The problem document MUST
+  carry a `versions` member listing all major versions the receiver serves,
+  e.g. `"versions": ["v1"]` (`discovery.md` §5.1).
 - Permanent per-recipient problems make the result `rejected`; temporary ones
   make it `deferred`.
 - Senders MUST treat an unknown problem `type` by its HTTP status class: 4xx

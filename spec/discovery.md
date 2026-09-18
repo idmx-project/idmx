@@ -131,9 +131,31 @@ fields are ignored). There is no optional behavior inside a major version
   downgrade: the pin protects against forged "no IDMX" answers from DNS, not
   against an authenticated receiver stating which versions it speaks.
 
-TODO: deprecation rule (how long a receiver keeps serving major version N-1
-after N ships); what a sender supporting only newer majors fetches on first
-contact if `/v1/` is gone.
+### 5.1 First contact with a retired version
+
+The capabilities path a sender fetches on first contact may belong to a major
+version the receiver no longer serves. The answer still tells the sender what
+exists:
+
+- Every `unsupported_version` problem (`errors.md` §2) MUST carry a
+  **`versions`** member: all major versions the receiver serves, in the same
+  format as the capabilities member.
+- A sender that supports one of the listed versions fetches that version's
+  capabilities document and continues as above. This follows an authenticated
+  statement of the receiver; it is not path probing.
+- A problem without a usable `versions` member, or a list without any version
+  the sender supports, is "no common major version".
+
+### 5.2 Deprecation of major versions
+
+- A receiver that serves major version N MUST also serve **N-1** until at
+  least **24 months** after the specification of version N was published as
+  final. After that it MAY stop serving N-1. There is no obligation towards
+  versions older than N-1.
+- Senders SHOULD keep supporting N-1 for the same period. A sender that drops
+  it earlier only harms its own deliveries: they go out over SMTP.
+- A retired version costs IDMX delivery, never mail: the affected pairs fall
+  back to SMTP under the "no common major version" rule above.
 
 ## 6. Domain migration
 

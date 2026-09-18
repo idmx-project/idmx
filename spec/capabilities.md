@@ -78,7 +78,8 @@ A sender that has no usable cached document fetches one before delivering.
   (`errors.md` §2). This is fallback-eligible (`errors.md` §3). No pin is set
   or refreshed.
 - Exception: a `404` problem of type `unsupported_version` is handled as
-  `unsupported_version`.
+  `unsupported_version`. Its `versions` member tells the sender which
+  capabilities document to fetch instead, if any (`discovery.md` §5.1).
 - Members with values outside the ranges of §3 (e.g. `max_message_size` below
   the floor) are **used as advertised**. Senders do not police receivers;
   range violations are a conformance-test matter. The clamp of

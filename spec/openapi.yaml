@@ -328,4 +328,14 @@ components:
           type: string
         instance:
           type: string
+        versions:
+          type: array
+          uniqueItems: true
+          description: |
+            REQUIRED in `unsupported_version` problems, absent otherwise: all
+            major versions this receiver serves, as in the capabilities
+            document (discovery.md §5.1).
+          items:
+            type: string
+            pattern: '^v[1-9][0-9]*$'
       additionalProperties: true

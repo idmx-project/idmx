@@ -933,7 +933,7 @@ Remaining areas still requiring design work:
 - ~~capabilities document schema~~ — settled 2026-09-18, see `spec/capabilities.md`: members are `versions`, `max_message_size` (required), `max_recipients`, `discovery_pin_max_age`, `abuse_contact`; **no `features`, no optional behavior in v1** — new behavior = new major version, mandatory there; `unsupported_feature` dropped. Caching: SHOULD `max-age=3600`, default 1 h, never older than 24 h. Unfetchable/invalid document → `temporary_failure` (fallback-eligible, no pin); out-of-range values used as advertised
 - ~~abuse-report contact format~~ — settled 2026-09-18: `abuse_contact` = one `mailto:` URI
 - list semantics (post-v1)
-- ~~major version negotiation~~ — settled 2026-09-18, see `spec/discovery.md` §5: capabilities lists all served majors in `versions` (absent = `["v1"]`), sender uses the highest common one, no path probing; no common version → SMTP fallback allowed immediately, even while pinned. Still open: deprecation window for old majors
+- ~~major version negotiation~~ — settled 2026-09-18, see `spec/discovery.md` §5: capabilities lists all served majors in `versions` (absent = `["v1"]`), sender uses the highest common one, no path probing; no common version → SMTP fallback allowed immediately, even while pinned. Deprecation settled 2026-09-18, `spec/discovery.md` §5.1–5.2: receivers MUST serve N-1 for 24 months after vN is final, senders SHOULD; every `unsupported_version` problem carries `versions`, so first contact with a retired version needs no probing
 - trademark check for "IDMX"; registration of idmx.org
 - E2EE key discovery (post-v1), see spec/delivery.md §7.4
 
