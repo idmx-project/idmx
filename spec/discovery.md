@@ -103,12 +103,38 @@ TODO: pin-failure reporting (TLS-RPT equivalent?).
 - HTTP/1.1 is not part of IDMX.
 - Major version in the URL path (`/v1/`).
 
-## 5. Domain migration
+## 5. Version selection
+
+The major version lives in the URL path. Minor evolution inside a major
+version needs no negotiation (unknown fields are ignored, optional behavior is
+announced as `features` flags).
+
+- Every capabilities document (`GET /vN/capabilities`) lists **all** major
+  versions the receiver serves in `versions`, e.g. `["v1", "v2"]`. An absent
+  `versions` means `["v1"]`.
+- A sender fetches the capabilities document of the highest major version it
+  knows the receiver serves (remembered alongside the pin); on first contact,
+  of the lowest major version the sender itself supports.
+- The sender then delivers using the **highest major version both sides
+  support**. Senders MUST NOT probe version paths to find out what exists.
+- The list arrives over authenticated TLS, so it cannot be stripped by a DNS
+  attacker; it has the same trust as the pin.
+- **No common major version**: the two systems cannot speak IDMX to each
+  other. The sender handles this as `unsupported_version` and MAY fall back to
+  SMTP immediately, even while a pin is valid (`errors.md` §3). This is not a
+  downgrade: the pin protects against forged "no IDMX" answers from DNS, not
+  against an authenticated receiver stating which versions it speaks.
+
+TODO: deprecation rule (how long a receiver keeps serving major version N-1
+after N ships); what a sender supporting only newer majors fetches on first
+contact if `/v1/` is gone.
+
+## 6. Domain migration
 
 Migration = change the SVCB record. Senders with a pin see the fresh record
 immediately (§3.2 row 1). Before decommissioning IDMX entirely, an operator
 lowers `discovery_pin_max_age` to `0` and waits out the previous max-age.
 
-## 6. Key discovery
+## 7. Key discovery
 
 Sender public keys live at `<selector>._idmxkey.<domain>`; see `signing.md` §4.

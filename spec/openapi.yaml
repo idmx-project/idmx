@@ -256,6 +256,18 @@ components:
       type: object
       required: [max_message_size]
       properties:
+        versions:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          default: [v1]
+          description: |
+            All major versions this receiver serves, as URL path segments.
+            Absent means `["v1"]`. Senders use the highest common version and
+            MUST NOT probe version paths (discovery.md §5).
+          items:
+            type: string
+            pattern: '^v[1-9][0-9]*$'
         max_message_size:
           type: integer
           description: Bytes. Spec floor TODO (e.g. >= 25 MB). Over limit -> `message_too_large`.

@@ -180,7 +180,8 @@ model.
   feature never advertises it. No discover-by-failure.
 - As **new envelope or result fields**, which v1 implementations ignore.
 - Anything that cannot be expressed this way needs a new major version
-  (`/v2/`); see `errors.md` (`unsupported_version`).
+  (`/v2/`), selected through the capabilities `versions` list
+  (`discovery.md` §5).
 
 ### 7.2 Large messages
 

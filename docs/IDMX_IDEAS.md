@@ -932,7 +932,7 @@ Remaining areas still requiring design work:
 - capabilities document schema; how to reserve room for first-contact friction and attestations
 - abuse-report contact format
 - list semantics (post-v1)
-- backwards compatibility rules between IDMX major versions
+- ~~major version negotiation~~ — settled 2026-09-18, see `spec/discovery.md` §5: capabilities lists all served majors in `versions` (absent = `["v1"]`), sender uses the highest common one, no path probing; no common version → SMTP fallback allowed immediately, even while pinned. Still open: deprecation window for old majors
 - trademark check for "IDMX"; registration of idmx.org
 
 ---

@@ -19,7 +19,7 @@ per-recipient `problem` inside a `200` result (`delivery.md` §5).
 | `invalid_signature` | R | 401 | permanent | no | never |
 | `policy_rejected` | R, P | 403 | permanent | no | never |
 | `recipient_not_found` | P | — | permanent | no | never |
-| `unsupported_version` | R | 404 | permanent | no | TODO |
+| `unsupported_version` | R | 404 | permanent | no | **allowed**, immediately (§3) |
 | `idempotency_conflict` | R | 409 | permanent | no | never |
 | `message_too_large` | R | 413 | permanent | no | never |
 | `unsupported_feature` | R | 422 | permanent | no | TODO |
@@ -28,7 +28,8 @@ per-recipient `problem` inside a `200` result (`delivery.md` §5).
 | `temporary_failure` | R, P | 503 | temporary | yes | after fallback window (R) |
 
 - `unsupported_version` is the answer to any path under an unknown major
-  version (e.g. `/v2/...`).
+  version (e.g. `/v2/...`). Senders avoid it by selecting a version from the
+  capabilities `versions` list (`discovery.md` §5).
 - Permanent per-recipient problems make the result `rejected`; temporary ones
   make it `deferred`.
 - Senders MUST treat an unknown problem `type` by its HTTP status class: 4xx
@@ -42,6 +43,11 @@ per-recipient `problem` inside a `200` result (`delivery.md` §5).
   bounded window (order of 1–4 h), then fall back to SMTP**.
 - Explicit IDMX rejections (4xx-class semantic errors) **never fall back**.
   SMTP must not bypass a deliberate IDMX rejection.
+- **Exception — no common major version** (`unsupported_version`, or a
+  `versions` list without any version the sender supports): the sender MAY
+  fall back to SMTP immediately, even while a pin is valid. The receiver has
+  not rejected the message; the two systems merely share no IDMX version, which
+  is equivalent to the domain not supporting IDMX for this sender.
 
 TODO: exact retry schedule and fallback window value.
 
