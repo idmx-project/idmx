@@ -1,6 +1,6 @@
 ---
 name: rust-strict
-description: Personal Rust guidelines — type-driven design (enums, newtypes, type-state), error handling (anyhow vs thiserror), project structure, visibility, tooling, and CI hardening. Use when writing, reviewing, or refactoring Rust code, or when the user invokes /rust-strict.
+description: Personal Rust guidelines — type-driven design (enums, newtypes, type-state), error handling (anyhow vs thiserror), project structure, visibility, performance, tooling, and CI hardening. Use when writing, reviewing, or refactoring Rust code, or when the user invokes /rust-strict.
 ---
 
 # Strict Rust Guidelines
@@ -139,7 +139,40 @@ pub enum VerifyError {
 - **Visibility:** default to private. Use `pub(crate)` for crate-internal sharing; `pub` only
   for the intended API. Every `pub` item is a refactoring constraint.
 
-## 4. Dev loop
+## 4. Performance
+
+Cheap habits below are defaults. Anything bigger: measure first (`cargo bench`/criterion,
+`cargo flamegraph`), always in `--release`.
+
+- **Borrow, don't allocate:** take `&str` / `&[T]` / `&Path` in parameters instead of
+  `String` / `Vec<T>` / `PathBuf` unless the function needs ownership. Return slices into the
+  input where lifetimes allow. In hot loops avoid `to_string()`, `clone()`, `format!`, and
+  `collect()` into a temporary `Vec` just to iterate again. Reuse buffers (`clear()` and
+  refill) and use `with_capacity` when the size is known. `Cow<'_, str>` when only some paths
+  need to allocate.
+- **Don't repeat work:** one lookup instead of check + insert + update — use the `entry` API.
+
+  ```rust
+  // Bad: up to three hash lookups
+  if !counts.contains_key(word) { counts.insert(word, 0); }
+  *counts.get_mut(word).unwrap() += 1;
+
+  // Good: one
+  *counts.entry(word).or_insert(0) += 1;
+  ```
+
+  Same idea elsewhere: `if let Some(x) = map.get(k)` over `contains_key` + index, hoist
+  invariant computations out of loops, compile regexes once (`LazyLock`).
+- **Use all cores:** for CPU-bound, independent per-item work over large inputs, write the
+  loop as an iterator chain and switch to `rayon` (`par_iter()`, `par_lines()`,
+  `par_chunks()`). Combine results with `map`/`reduce`/`fold`/`collect`, not a shared
+  `Mutex`. Not for small inputs or I/O-bound work (overhead dominates), and never inside an
+  async runtime's worker threads.
+- **`swap_remove` when order doesn't matter:** `Vec::remove(i)` shifts every later element
+  (O(n)); `swap_remove(i)` moves the last element into the hole (O(1)). For removing many
+  elements use `retain`; for queue behaviour use `VecDeque`.
+
+## 5. Dev loop
 
 - `dbg!(expr)` over `println!` for debugging — prints file/line, expression, and value, and
   returns the value. Never commit it.
@@ -151,7 +184,7 @@ pub enum VerifyError {
   errors usually point at a design problem. Fix the design — don't silence it with `clone()`,
   `Rc<RefCell<_>>`, or `'static`.
 
-## 5. Quality gates and CI
+## 6. Quality gates and CI
 
 Run locally before committing and enforce in CI:
 
@@ -174,4 +207,6 @@ cargo tarpaulin        # test coverage
 5. Fallible I/O without `context`/`with_context`? → add.
 6. `pub` that could be `pub(crate)` or private? → narrow.
 7. Leftover `dbg!`, `todo!`, `unwrap()`? → remove.
-8. fmt, clippy `-D warnings`, tests, audit, deny all green?
+8. Owned params (`String`, `Vec<T>`) that are only read? Double map lookups? `Vec::remove` where
+   order is irrelevant? → `&str`/`&[T]`, `entry`, `swap_remove`.
+9. fmt, clippy `-D warnings`, tests, audit, deny all green?
