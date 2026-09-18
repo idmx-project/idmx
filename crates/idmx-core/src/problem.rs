@@ -32,8 +32,6 @@ pub enum ProblemKind {
     IdempotencyConflict,
     /// `message_too_large`
     MessageTooLarge,
-    /// `unsupported_feature`
-    UnsupportedFeature,
     /// `rate_limited`
     RateLimited,
     /// `mailbox_full`
@@ -43,7 +41,7 @@ pub enum ProblemKind {
 }
 
 impl ProblemKind {
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 10] = [
         Self::InvalidRequest,
         Self::InvalidSignature,
         Self::PolicyRejected,
@@ -51,7 +49,6 @@ impl ProblemKind {
         Self::UnsupportedVersion,
         Self::IdempotencyConflict,
         Self::MessageTooLarge,
-        Self::UnsupportedFeature,
         Self::RateLimited,
         Self::MailboxFull,
         Self::TemporaryFailure,
@@ -68,7 +65,6 @@ impl ProblemKind {
             Self::UnsupportedVersion => "unsupported_version",
             Self::IdempotencyConflict => "idempotency_conflict",
             Self::MessageTooLarge => "message_too_large",
-            Self::UnsupportedFeature => "unsupported_feature",
             Self::RateLimited => "rate_limited",
             Self::MailboxFull => "mailbox_full",
             Self::TemporaryFailure => "temporary_failure",
@@ -86,7 +82,6 @@ impl ProblemKind {
             Self::UnsupportedVersion => Some(404),
             Self::IdempotencyConflict => Some(409),
             Self::MessageTooLarge => Some(413),
-            Self::UnsupportedFeature => Some(422),
             Self::RateLimited => Some(429),
             Self::TemporaryFailure => Some(503),
             Self::RecipientNotFound | Self::MailboxFull => None,
@@ -106,8 +101,7 @@ impl ProblemKind {
             | Self::RecipientNotFound
             | Self::UnsupportedVersion
             | Self::IdempotencyConflict
-            | Self::MessageTooLarge
-            | Self::UnsupportedFeature => FailureClass::Permanent,
+            | Self::MessageTooLarge => FailureClass::Permanent,
         }
     }
 }

@@ -37,6 +37,9 @@ pub enum ConfigError {
     /// safe directory name, or the given `maildir` is not a plain name.
     #[error("mailbox `{0}` needs a `maildir` that is a plain directory name")]
     Maildir(Mailbox),
+    /// `abuse_contact` is not a `mailto:` URI without header fields.
+    #[error("abuse_contact `{0}` must be a `mailto:` URI without `?`")]
+    AbuseContact(String),
 }
 
 /// How the listener is secured.
@@ -72,6 +75,8 @@ pub struct Config {
     pub max_recipients: usize,
     /// Advertised `discovery_pin_max_age` in seconds.
     pub discovery_pin_max_age: u64,
+    /// Advertised `abuse_contact`: a `mailto:` URI without header fields.
+    pub abuse_contact: Option<String>,
     /// Known mailboxes and their maildir name below `data_dir/mail`.
     pub mailboxes: HashMap<Mailbox, String>,
 }
@@ -87,6 +92,7 @@ struct ConfigFile {
     max_message_size: Option<usize>,
     max_recipients: Option<usize>,
     discovery_pin_max_age: Option<u64>,
+    abuse_contact: Option<String>,
     #[serde(default)]
     mailbox: Vec<MailboxFile>,
 }
@@ -123,6 +129,11 @@ impl Config {
             MIN_MAX_MESSAGE_SIZE,
         )?;
         let max_recipients = at_least("max_recipients", file.max_recipients, MIN_MAX_RECIPIENTS)?;
+        if let Some(contact) = &file.abuse_contact
+            && !is_abuse_contact(contact)
+        {
+            return Err(ConfigError::AbuseContact(contact.clone()));
+        }
 
         let mut mailboxes = HashMap::with_capacity(file.mailbox.len());
         for MailboxFile { address, maildir } in file.mailbox {
@@ -150,6 +161,7 @@ impl Config {
             max_message_size,
             max_recipients,
             discovery_pin_max_age: file.discovery_pin_max_age.unwrap_or(0),
+            abuse_contact: file.abuse_contact,
             mailboxes,
         })
     }
@@ -192,6 +204,13 @@ fn is_authority(authority: &str) -> bool {
         && port.is_none_or(|port| port.parse::<u16>().is_ok())
 }
 
+/// `spec/capabilities.md` §3: a `mailto:` URI without header fields.
+fn is_abuse_contact(contact: &str) -> bool {
+    contact
+        .strip_prefix("mailto:")
+        .is_some_and(|address| address.contains('@') && !address.contains('?'))
+}
+
 /// A single path component that cannot escape the mail root.
 fn is_plain_name(name: &str) -> bool {
     !name.starts_with('.')
@@ -229,6 +248,23 @@ mod tests {
     #[test]
     fn parse_should_default_to_proxy_transport_without_tls_section() {
         assert_eq!(with("").unwrap().transport, Transport::BehindProxy);
+    }
+
+    #[test]
+    fn parse_should_accept_mailto_abuse_contact() {
+        let config = with(r#"abuse_contact = "mailto:abuse@receiver.example""#).unwrap();
+
+        assert_eq!(
+            config.abuse_contact.as_deref(),
+            Some("mailto:abuse@receiver.example")
+        );
+    }
+
+    #[test]
+    fn parse_should_reject_abuse_contact_with_header_fields() {
+        let result = with(r#"abuse_contact = "mailto:abuse@receiver.example?subject=x""#);
+
+        assert!(matches!(result, Err(ConfigError::AbuseContact(_))));
     }
 
     #[test]

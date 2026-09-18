@@ -38,7 +38,6 @@ impl FailureReason {
             ProblemKind::InvalidRequest
             | ProblemKind::UnsupportedVersion
             | ProblemKind::IdempotencyConflict
-            | ProblemKind::UnsupportedFeature
             | ProblemKind::RateLimited
             | ProblemKind::TemporaryFailure => "5.0.0",
         }

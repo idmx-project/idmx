@@ -1,5 +1,4 @@
-//! The capabilities document (`GET /v1/capabilities`, `spec/delivery.md` §6,
-//! `spec/discovery.md` §5).
+//! The capabilities document (`GET /v1/capabilities`, `spec/capabilities.md`).
 
 use std::time::Duration;
 
@@ -26,6 +25,9 @@ pub struct Capabilities {
     /// Seconds a sender may pin this domain's IDMX support. Absent means 0.
     #[serde(default)]
     pub discovery_pin_max_age: u64,
+    /// Where to report abuse: a `mailto:` URI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abuse_contact: Option<String>,
 }
 
 fn default_versions() -> Vec<String> {
@@ -75,7 +77,7 @@ mod tests {
 
     #[test]
     fn deserialize_should_ignore_unknown_members() {
-        let capabilities = parse(r#"{"max_message_size":1,"features":{"x":true},"new":1}"#);
+        let capabilities = parse(r#"{"max_message_size":1,"new":{"x":true}}"#);
 
         assert_eq!(capabilities.max_message_size, 1);
     }

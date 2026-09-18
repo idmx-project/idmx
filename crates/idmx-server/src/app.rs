@@ -52,6 +52,7 @@ async fn capabilities(State(app): State<Arc<App>>) -> Response {
         max_message_size: app.config.max_message_size as u64,
         max_recipients: app.config.max_recipients as u64,
         discovery_pin_max_age: app.config.discovery_pin_max_age,
+        abuse_contact: app.config.abuse_contact.clone(),
     };
     let mut response = axum::Json(body).into_response();
     response.headers_mut().insert(

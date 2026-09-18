@@ -247,7 +247,7 @@ impl Sender {
             .map_err(Attempt::Unreachable)?;
 
         if response.status() != StatusCode::OK {
-            return Err(classify_failure(response).await);
+            return Err(classify_capabilities_failure(response).await);
         }
         response
             .json::<Capabilities>()
@@ -357,9 +357,66 @@ async fn classify_failure(response: Response) -> Attempt {
     }
 }
 
+/// `spec/capabilities.md` §5: anything but `200` is a fallback-eligible
+/// temporary failure, except `unsupported_version`.
+async fn classify_capabilities_failure(response: Response) -> Attempt {
+    match classify_failure(response).await {
+        Attempt::Rejected(problem) => Attempt::TryLater {
+            fallback: SmtpFallback::AfterWindow,
+            problem: Some(problem),
+            retry_after: None,
+        },
+        Attempt::TryLater {
+            problem,
+            retry_after,
+            ..
+        } => Attempt::TryLater {
+            fallback: SmtpFallback::AfterWindow,
+            problem,
+            retry_after,
+        },
+        attempt @ (Attempt::Completed(_) | Attempt::Unreachable(_) | Attempt::UseSmtp(_)) => {
+            attempt
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn problem_response(status: u16, kind: &str) -> Response {
+        let body = format!(r#"{{"type":"https://idmx-project.org/problems/{kind}"}}"#);
+        axum::http::Response::builder()
+            .status(status)
+            .body(body)
+            .unwrap()
+            .into()
+    }
+
+    #[tokio::test]
+    async fn classify_capabilities_failure_should_allow_fallback_for_client_error() {
+        let attempt = classify_capabilities_failure(problem_response(403, "policy_rejected")).await;
+
+        assert!(matches!(
+            attempt,
+            Attempt::TryLater {
+                fallback: SmtpFallback::AfterWindow,
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn classify_capabilities_failure_should_use_smtp_for_unsupported_version() {
+        let attempt =
+            classify_capabilities_failure(problem_response(404, "unsupported_version")).await;
+
+        assert!(matches!(
+            attempt,
+            Attempt::UseSmtp(SmtpReason::NoCommonVersion)
+        ));
+    }
 
     fn pinned() -> Vec<String> {
         vec!["idmx.receiver.example:8443".to_owned()]

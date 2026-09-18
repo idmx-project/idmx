@@ -20,6 +20,9 @@ data_dir = "/var/lib/idmxd"
 # Seconds senders may pin this domain's IDMX support. 0 = no pinning.
 discovery_pin_max_age = 0
 
+# Optional; where to report abuse. A mailto: URI.
+# abuse_contact = "mailto:abuse@example.org"
+
 # Omit this section to serve plain HTTP/2 behind a TLS 1.3 terminating proxy.
 [tls]
 cert = "/etc/idmxd/fullchain.pem"
