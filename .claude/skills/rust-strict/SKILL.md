@@ -81,7 +81,16 @@ impl Connection<Open> {
 | Application / binary code; caller only needs "it failed" plus a good message | `anyhow` |
 | Library code, or caller must branch on specific failure modes | `thiserror` (typed error enum) |
 
-Never expose `anyhow::Error` in a library's public API.
+The split is by *who handles the error*, not "anyhow wherever it compiles":
+
+- Every binary's `main` returns `anyhow::Result<()>`; startup, config, and CLI glue use
+  `anyhow` with context. That is where errors are only printed before exiting.
+- Library crates never depend on `anyhow` (dev-dependencies for test helpers are fine) and
+  never expose `anyhow::Error` in their public API.
+- Inside a binary, code whose caller must *react* to the failure — retry vs. give up, map to
+  an HTTP status or protocol error code, assert a specific variant in a test — still uses a
+  typed `thiserror` enum. `anyhow` erases the type; a `match` on an enum breaks the build
+  when a variant is added, an opaque error cannot.
 
 ### anyhow
 - Return `anyhow::Result<T>` instead of hand-writing an error enum per situation.
@@ -203,7 +212,8 @@ cargo tarpaulin        # test coverage
 2. Any primitive carrying a domain invariant (email, amount, id, selector)? → newtype with
    validating constructor.
 3. Any runtime "is this allowed right now?" check on a known-at-compile-time flow? → type-state.
-4. Library returning `anyhow` / app hand-rolling error enums nobody matches on? → swap.
+4. Library depending on `anyhow`, `main` not returning `anyhow::Result`, error enum nobody
+   matches on, or `anyhow` where the caller must branch on the failure? → swap.
 5. Fallible I/O without `context`/`with_context`? → add.
 6. `pub` that could be `pub(crate)` or private? → narrow.
 7. Leftover `dbg!`, `todo!`, `unwrap()`? → remove.
