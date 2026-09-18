@@ -935,6 +935,7 @@ Remaining areas still requiring design work:
 - list semantics (post-v1)
 - ~~major version negotiation~~ — settled 2026-09-18, see `spec/discovery.md` §5: capabilities lists all served majors in `versions` (absent = `["v1"]`), sender uses the highest common one, no path probing; no common version → SMTP fallback allowed immediately, even while pinned. Still open: deprecation window for old majors
 - trademark check for "IDMX"; registration of idmx.org
+- E2EE key discovery (post-v1), see spec/delivery.md §7.4
 
 ---
 

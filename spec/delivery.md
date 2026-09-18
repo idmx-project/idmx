@@ -224,3 +224,21 @@ Constraints for either design:
 First-contact friction and sender attestations (`docs/IDMX_IDEAS.md`, "Abuse
 and Spam") are candidates for a later major version. The ignored-unknown-fields
 rule keeps the envelope and result formats extensible for them.
+
+### 7.4 End-to-end encryption
+
+IDMX is hop-to-hop between domain servers; end-to-end encryption is a matter
+between mail clients. v1 does not block it: the message is opaque and carried
+byte-for-byte (§2), so an encrypted MIME body (OpenPGP/MIME, S/MIME) passes
+through unchanged, over IDMX and over SMTP fallback alike. The envelope stays
+in the clear, because the receiver needs it to route.
+
+What v1 lacks is **recipient key discovery**. A candidate for a later major
+version is a per-mailbox key lookup on the receiver, authenticated by TLS and
+tied to the pinned discovery result. Constraints:
+
+- The receiving server vouches for the key it serves; protection against a
+  malicious provider needs key transparency or out-of-band verification.
+- No new encryption format: reuse existing message-level formats.
+- Whether a message is encrypted stays the client's choice; it is content, not
+  protocol behavior (`capabilities.md` §2).
