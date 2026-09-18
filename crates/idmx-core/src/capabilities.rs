@@ -8,6 +8,10 @@ use serde::{Deserialize, Serialize};
 /// The major version this crate implements, as a URL path segment.
 pub const VERSION: &str = "v1";
 
+/// Senders treat a larger `discovery_pin_max_age` as this (`spec/discovery.md`
+/// §3.1): one year of 365.25 days, 31 557 600 seconds.
+pub const MAX_PIN_AGE: Duration = Duration::from_hours(8766);
+
 /// Limits and versions a receiver advertises. Unknown members are ignored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Capabilities {
@@ -39,10 +43,12 @@ impl Capabilities {
         self.versions.iter().any(|version| version == VERSION)
     }
 
-    /// How long a positive discovery result may be pinned; `None` = no pin.
+    /// How long a positive discovery result may be pinned, at most
+    /// [`MAX_PIN_AGE`]; `None` = no pin.
     #[must_use]
     pub fn pin_max_age(&self) -> Option<Duration> {
-        (self.discovery_pin_max_age > 0).then(|| Duration::from_secs(self.discovery_pin_max_age))
+        (self.discovery_pin_max_age > 0)
+            .then(|| Duration::from_secs(self.discovery_pin_max_age).min(MAX_PIN_AGE))
     }
 }
 
@@ -79,6 +85,13 @@ mod tests {
         let capabilities = parse(r#"{"versions":["v2","v3"],"max_message_size":1}"#);
 
         assert!(!capabilities.supports_this_version());
+    }
+
+    #[test]
+    fn pin_max_age_should_be_clamped_to_one_year() {
+        let capabilities = parse(r#"{"max_message_size":1,"discovery_pin_max_age":99999999999}"#);
+
+        assert_eq!(capabilities.pin_max_age(), Some(MAX_PIN_AGE));
     }
 
     #[test]
