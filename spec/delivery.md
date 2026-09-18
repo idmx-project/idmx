@@ -166,3 +166,49 @@ From `GET /v1/capabilities`:
 |---|---|
 | `max_message_size` | Largest accepted request body in bytes. Floor TODO (e.g. ≥ 25 MB). Over limit → `message_too_large`. |
 | `max_recipients` | Largest accepted `to` length. Absent = 100. MUST be ≥ 100. Over limit → `invalid_request`. |
+
+## 7. Future extensions (informative)
+
+Nothing in this section is part of v1. It records the design room that v1
+deliberately leaves, so that later work does not have to break the delivery
+model.
+
+### 7.1 How extensions arrive
+
+- As **feature flags** in the `features` object of `GET /v1/capabilities`. A
+  sender that does not know a flag ignores it; a receiver that does not offer a
+  feature never advertises it. No discover-by-failure.
+- As **new envelope or result fields**, which v1 implementations ignore.
+- Anything that cannot be expressed this way needs a new major version
+  (`/v2/`); see `errors.md` (`unsupported_version`).
+
+### 7.2 Large messages
+
+`max_message_size` has a floor, not a cap: a receiver may already advertise
+far more than the floor. Where the receiver *stores* an accepted message
+(file system, database, S3-compatible object store) is receiver-internal and
+invisible on the wire.
+
+What v1 lacks is a robust *transfer* for very large bodies. Candidates:
+
+- **Resumable upload**: the sender uploads the body in ranges to an upload
+  resource, then sends a small delivery request that references it (cf. the
+  IETF "Resumable Uploads for HTTP" work).
+- **Receiver-hosted external body**: the receiver hands out an upload slot
+  (e.g. a pre-signed object-store URL); the sender uploads there and the
+  delivery request carries a reference with size and SHA-256 digest inside the
+  signed body, so integrity and sender authentication are preserved.
+
+Constraints for either design:
+
+- The upload location MUST be controlled by the **receiver**. A sender-hosted
+  URL that the receiver fetches is rejected as a design: SSRF and tracking
+  risk, content mutable after signing, and link rot.
+- SMTP fallback must stay well-defined: a message too large for the fallback
+  path needs a specified outcome (e.g. bounce), never silent loss.
+
+### 7.3 Abuse controls
+
+First-contact friction and sender attestations (`docs/IDMX_IDEAS.md`, "Abuse
+and Spam") are expected to arrive as feature flags plus optional envelope
+fields.
