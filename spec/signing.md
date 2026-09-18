@@ -92,7 +92,10 @@ Signature: idmx=:<base64 64-byte signature>:
   (case-insensitive, after IDNA A-label conversion). Otherwise →
   `invalid_signature`.
 - `@authority` binds the request to the receiver's IDMX host, so a captured
-  request cannot be replayed to a different receiver.
+  request cannot be replayed to a different receiver. For this to hold, a
+  receiver MUST reject (`invalid_signature`) any request whose authority is not
+  one it serves, instead of accepting whatever `Host` / `:authority` the client
+  sent.
 
 - The match is **exact**. A key under `example.org` does not authorize
   `sub.example.org`; there is no organizational-domain or public-suffix logic.

@@ -106,6 +106,12 @@ TODO: tighten local-part syntax (RFC 5321 / RFC 6531 alignment, quoting).
 - Same key, same `Content-Digest` → the receiver MUST return the **original
   response** (status and body) and MUST NOT deliver again.
 - Same key, different `Content-Digest` → `idempotency_conflict` (permanent).
+- A key is recorded when the receiver produces a **`200` response**. Request-level
+  failures are not recorded: temporary ones must stay retryable under the same
+  key, and permanent ones are reproduced by evaluating the request again.
+- While a request is being processed, a concurrent request with the same key
+  is answered with `temporary_failure`; its retry then receives the recorded
+  response.
 - Retries of the *same* request re-sign with a fresh `created` and reuse the key
   (`signing.md` §3).
 
