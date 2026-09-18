@@ -60,5 +60,7 @@ domain() { # name, domain, ip, port, user
 
 domain domain-a domain-a.test 10.89.53.11 443 alice
 domain domain-b domain-b.test 10.89.53.12 8443 bob
+# SMTP only: MX, no _idmx record.
+cp templates/zone-legacy "$out/dns/legacy.test.zone"
 cp templates/Corefile "$out/dns/Corefile"
 echo "devnet material generated in devnet/$out"

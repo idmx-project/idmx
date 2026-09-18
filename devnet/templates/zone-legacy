@@ -1,0 +1,7 @@
+$ORIGIN legacy.test.
+$TTL 60
+@            IN SOA  ns.legacy.test. hostmaster.legacy.test. 1 3600 600 86400 60
+@            IN NS   ns.legacy.test.
+ns           IN A    10.89.53.2
+@            IN MX   10 mx.legacy.test.
+mx           IN A    10.89.53.30

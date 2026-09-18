@@ -64,7 +64,7 @@ check "bob's maildir has the message with idmx=pass for domain-a.test" \
 check "retry with the same idempotency key is accepted again" \
     send idmx-domain-a alice@domain-a.test bob@domain-b.test --idempotency-key flow1-a-to-b
 check "the retry did not deliver a second copy" \
-    "$engine" exec idmx-domain-b sh -c '[ "$(ls /var/lib/idmxd/mail/bob/new | wc -l)" -eq 1 ]'
+    "$engine" exec idmx-domain-b sh -c '[ "$(ls /var/lib/idmxd/mail/bob/new | grep -c flow1-a-to-b)" -eq 1 ]'
 
 check "bob@domain-b.test -> alice@domain-a.test is accepted (default port 443)" \
     send idmx-domain-b bob@domain-b.test alice@domain-a.test

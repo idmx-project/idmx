@@ -9,3 +9,9 @@ domain-b.test:53 {
     errors
     log
 }
+
+legacy.test:53 {
+    file /etc/coredns/legacy.test.zone
+    errors
+    log
+}

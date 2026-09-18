@@ -4,8 +4,9 @@
 #   dns        CoreDNS, authoritative for the *.test zones      10.89.53.2
 #   domain-a   idmxd for domain-a.test on port 443              10.89.53.11
 #   domain-b   idmxd for domain-b.test on port 8443 (SVCB port) 10.89.53.12
-#
-# Planned for flow 2: legacy.test (SMTP only) and Postfix.
+#   mta-a      Postfix + idmx queue: outbound MTA of domain-a   10.89.53.21
+#   legacy     Postfix MX of legacy.test (SMTP only); also the
+#              SMTP MX of the modern domains                    10.89.53.30
 
 networks:
   idmx:
@@ -48,3 +49,25 @@ services:
     networks:
       idmx:
         ipv4_address: 10.89.53.12
+
+  mta-a:
+    <<: *idmxd
+    container_name: idmx-mta-a
+    hostname: mail.domain-a.test
+    entrypoint: ["postfix.sh", "relay", "mail.domain-a.test"]
+    command: []
+    volumes:
+      - ./generated/domain-a:/etc/idmx:ro
+    networks:
+      idmx:
+        ipv4_address: 10.89.53.21
+
+  legacy:
+    <<: *idmxd
+    container_name: idmx-legacy
+    hostname: mx.legacy.test
+    entrypoint: ["postfix.sh", "mx", "mx.legacy.test"]
+    command: ["bob@legacy.test", "bob@domain-b.test", "alice@domain-a.test"]
+    networks:
+      idmx:
+        ipv4_address: 10.89.53.30

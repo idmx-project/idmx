@@ -11,8 +11,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 FROM docker.io/library/debian:bookworm-slim
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates postfix \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/bin/idmxd /usr/local/bin/idmx /usr/local/bin/
+# Flow 2: the same image also runs the Postfix containers.
+COPY devnet/postfix.sh /usr/local/bin/postfix.sh
 ENTRYPOINT ["idmxd"]
 CMD ["/etc/idmx/idmxd.toml"]
