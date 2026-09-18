@@ -1,0 +1,294 @@
+//! One delivery attempt and its classification (`spec/errors.md`).
+
+use std::time::{Duration, SystemTime};
+
+use hickory_resolver::TokioResolver;
+use idmx_core::body::encode;
+use idmx_core::capabilities::Capabilities;
+use idmx_core::discovery::{Discovery, DiscoveryError, discover};
+use idmx_core::envelope::{Envelope, ReversePath};
+use idmx_core::idempotency::IdempotencyKey;
+use idmx_core::problem::{FailureClass, Problem, ProblemKind, ProblemType};
+use idmx_core::result::DeliveryResult;
+use idmx_core::signing::{self, SignError, sign};
+use reqwest::{Response, StatusCode, header};
+
+use crate::identity::Identity;
+
+const MESSAGES_PATH: &str = "/v1/messages";
+const CAPABILITIES_PATH: &str = "/v1/capabilities";
+
+/// Local failures that prevent an attempt from being made at all.
+#[derive(Debug, thiserror::Error)]
+pub enum SendError {
+    /// The envelope sender is not in the domain of the signing key.
+    #[error("envelope sender is not in the signing domain `{0}`")]
+    SenderDomain(String),
+    /// The envelope cannot be serialized.
+    #[error("encoding the envelope: {0}")]
+    Encode(#[from] serde_json::Error),
+    /// The request cannot be signed.
+    #[error(transparent)]
+    Sign(#[from] SignError),
+}
+
+/// Why SMTP may be used right away.
+#[derive(Debug)]
+pub enum SmtpReason {
+    /// The domain publishes no usable `_idmx` SVCB record.
+    NotAdvertised,
+    /// Discovery failed. Without a valid pin this means SMTP
+    /// (`spec/discovery.md` §3.2); a pin-aware caller must treat it as
+    /// [`Attempt::TryLater`] instead.
+    DiscoveryFailed(DiscoveryError),
+    /// Receiver and sender share no major version (`spec/discovery.md` §5).
+    NoCommonVersion,
+}
+
+/// Outcome of one attempt, telling the caller what it may do next.
+#[derive(Debug)]
+#[must_use]
+pub enum Attempt {
+    /// The receiver processed the request; act on each recipient's result.
+    Completed(DeliveryResult),
+    /// Permanent request-level failure: bounce. Never retry, never use SMTP.
+    Rejected(Problem),
+    /// Temporary failure: retry IDMX with the same idempotency key. SMTP only
+    /// after the fallback window has passed.
+    TryLater {
+        /// The receiver's problem document, if it sent one.
+        problem: Option<Problem>,
+        /// The receiver's `Retry-After`, if it sent one in seconds.
+        retry_after: Option<Duration>,
+    },
+    /// No usable HTTP response: connection, TLS, or protocol failure, or an
+    /// unreadable body. Handled like a temporary failure; the retry may go to
+    /// another endpoint of the domain.
+    Unreachable(reqwest::Error),
+    /// IDMX is not available for this domain; SMTP may be used now.
+    UseSmtp(SmtpReason),
+}
+
+/// A `reqwest` client builder with the transport rules of `spec/discovery.md`
+/// §4 applied: rustls with the `ring` provider, TLS 1.3 as the minimum.
+pub fn http_client_builder() -> reqwest::ClientBuilder {
+    // A failed install only means a provider is already in place.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    reqwest::Client::builder().tls_version_min(reqwest::tls::Version::TLS_1_3)
+}
+
+/// Performs delivery attempts for one sending identity.
+pub struct Sender {
+    http: reqwest::Client,
+    resolver: TokioResolver,
+    identity: Identity,
+}
+
+impl Sender {
+    /// Build `http` from [`http_client_builder`].
+    #[must_use]
+    pub fn new(http: reqwest::Client, resolver: TokioResolver, identity: Identity) -> Self {
+        Self {
+            http,
+            resolver,
+            identity,
+        }
+    }
+
+    /// Discovers the recipient domain's endpoints and attempts delivery to
+    /// them in priority order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SendError`] if the request cannot be built. Everything that
+    /// happens on the network is reported as an [`Attempt`].
+    pub async fn send(
+        &self,
+        envelope: &Envelope,
+        message: &[u8],
+        idempotency_key: &IdempotencyKey,
+    ) -> Result<Attempt, SendError> {
+        let endpoints = match discover(&self.resolver, envelope.recipient_domain()).await {
+            Ok(Discovery::Supported(endpoints)) => endpoints,
+            Ok(Discovery::Unsupported) => return Ok(Attempt::UseSmtp(SmtpReason::NotAdvertised)),
+            Err(error) => return Ok(Attempt::UseSmtp(SmtpReason::DiscoveryFailed(error))),
+        };
+
+        let mut last = Attempt::UseSmtp(SmtpReason::NotAdvertised);
+        for endpoint in endpoints {
+            let authority = endpoint.authority();
+            let origin = format!("https://{authority}");
+            last = self
+                .deliver_via(&origin, &authority, envelope, message, idempotency_key)
+                .await?;
+            // Only an unreachable endpoint justifies trying the next one.
+            if !matches!(last, Attempt::Unreachable(_)) {
+                break;
+            }
+        }
+        Ok(last)
+    }
+
+    /// Attempts delivery to one known origin (`scheme://authority`), e.g. a
+    /// pinned endpoint. `authority` is what the signature is bound to.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SendError`] if the request cannot be built.
+    pub async fn deliver_via(
+        &self,
+        origin: &str,
+        authority: &str,
+        envelope: &Envelope,
+        message: &[u8],
+        idempotency_key: &IdempotencyKey,
+    ) -> Result<Attempt, SendError> {
+        self.check_sender(envelope)?;
+        let body = encode(envelope, message)?;
+
+        let capabilities = match self.fetch_capabilities(origin).await {
+            Ok(capabilities) => capabilities,
+            Err(attempt) => return Ok(attempt),
+        };
+        if let Some(attempt) = check_limits(&capabilities, envelope, body.bytes.len()) {
+            return Ok(attempt);
+        }
+
+        let headers = sign(
+            &signing::Request {
+                method: "POST",
+                authority,
+                path: MESSAGES_PATH,
+                content_type: &body.content_type,
+                idempotency_key,
+                body: &body.bytes,
+            },
+            self.identity.key(),
+            self.identity.keyid(),
+            SystemTime::now(),
+        )?;
+
+        let response = self
+            .http
+            .post(format!("{origin}{MESSAGES_PATH}"))
+            .header(header::CONTENT_TYPE, &body.content_type)
+            .header("idempotency-key", idempotency_key.as_str())
+            .header("content-digest", headers.content_digest)
+            .header("signature-input", headers.signature_input)
+            .header("signature", headers.signature)
+            .body(body.bytes)
+            .send()
+            .await;
+        Ok(match response {
+            Ok(response) => classify_delivery(response).await,
+            Err(error) => Attempt::Unreachable(error),
+        })
+    }
+
+    fn check_sender(&self, envelope: &Envelope) -> Result<(), SendError> {
+        let signing_domain = self.identity.keyid().domain();
+        match envelope.from() {
+            ReversePath::Mailbox(mailbox) if mailbox.domain() != signing_domain => {
+                Err(SendError::SenderDomain(signing_domain.to_string()))
+            }
+            ReversePath::Mailbox(_) | ReversePath::Null => Ok(()),
+        }
+    }
+
+    /// `Err` carries the attempt outcome when capabilities cannot be used.
+    async fn fetch_capabilities(&self, origin: &str) -> Result<Capabilities, Attempt> {
+        let response = self
+            .http
+            .get(format!("{origin}{CAPABILITIES_PATH}"))
+            .send()
+            .await
+            .map_err(Attempt::Unreachable)?;
+
+        if response.status() != StatusCode::OK {
+            return Err(classify_failure(response).await);
+        }
+        response
+            .json::<Capabilities>()
+            .await
+            .map_err(Attempt::Unreachable)
+    }
+}
+
+/// Refuses locally what the receiver has announced it would refuse.
+fn check_limits(
+    capabilities: &Capabilities,
+    envelope: &Envelope,
+    body_len: usize,
+) -> Option<Attempt> {
+    let exceeds =
+        |value: usize, limit: u64| u64::try_from(value).map_or(true, |value| value > limit);
+
+    if !capabilities.supports_this_version() {
+        Some(Attempt::UseSmtp(SmtpReason::NoCommonVersion))
+    } else if exceeds(body_len, capabilities.max_message_size) {
+        Some(Attempt::Rejected(Problem::new(
+            ProblemKind::MessageTooLarge,
+        )))
+    } else if exceeds(envelope.to().len(), capabilities.max_recipients) {
+        Some(Attempt::Rejected(
+            Problem::new(ProblemKind::InvalidRequest).with_detail("too many recipients"),
+        ))
+    } else {
+        None
+    }
+}
+
+async fn classify_delivery(response: Response) -> Attempt {
+    if response.status() != StatusCode::OK {
+        return classify_failure(response).await;
+    }
+    // An unreadable 200 leaves the outcome unknown; the retry replays it.
+    response
+        .json::<DeliveryResult>()
+        .await
+        .map_or_else(Attempt::Unreachable, Attempt::Completed)
+}
+
+/// Classifies a non-200 response (`spec/errors.md` §2): by problem type if
+/// known, else by status class.
+async fn classify_failure(response: Response) -> Attempt {
+    let status = response.status();
+    let retry_after = response
+        .headers()
+        .get(header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|seconds| seconds.parse().ok())
+        .map(Duration::from_secs);
+    let problem = response.json::<Problem>().await.ok();
+
+    let kind = problem
+        .as_ref()
+        .and_then(|problem| match &problem.problem_type {
+            ProblemType::Known(kind) => Some(*kind),
+            ProblemType::Other(_) => None,
+        });
+    let class = kind.map_or_else(
+        || {
+            if status.is_client_error() {
+                FailureClass::Permanent
+            } else {
+                FailureClass::Temporary
+            }
+        },
+        ProblemKind::class,
+    );
+
+    match (kind, class) {
+        (Some(ProblemKind::UnsupportedVersion), _) => Attempt::UseSmtp(SmtpReason::NoCommonVersion),
+        (_, FailureClass::Temporary) => Attempt::TryLater {
+            problem,
+            retry_after,
+        },
+        (_, FailureClass::Permanent) => Attempt::Rejected(problem.unwrap_or_else(|| Problem {
+            problem_type: ProblemType::Other("about:blank".to_owned()),
+            title: None,
+            status: Some(status.as_u16()),
+            detail: None,
+        })),
+    }
+}

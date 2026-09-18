@@ -1,2 +1,8 @@
-//! IDMX sender library: discovery, signing, HTTPS delivery, and SMTP fallback
-//! hand-off. No protocol logic yet; see `spec/` for the normative definition.
+//! IDMX sender library: discovery, capabilities, signing, HTTPS delivery, and
+//! the decision what to do next ([`sender::Attempt`]).
+//!
+//! Queueing, retry schedules, pinning, and the SMTP hand-off are the caller's
+//! job; this crate performs exactly one delivery attempt and classifies it.
+
+pub mod identity;
+pub mod sender;
