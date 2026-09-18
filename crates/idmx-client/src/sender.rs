@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime};
 use hickory_resolver::TokioResolver;
 use idmx_core::body::encode;
 use idmx_core::capabilities::Capabilities;
-use idmx_core::discovery::{Discovery, DiscoveryError, discover};
+use idmx_core::discovery::{Discovery, DiscoveryError, Endpoint, discover};
 use idmx_core::envelope::{Envelope, ReversePath};
 use idmx_core::idempotency::IdempotencyKey;
 use idmx_core::problem::{FailureClass, Problem, ProblemKind, ProblemType};
@@ -14,6 +14,8 @@ use idmx_core::signing::{self, SignError, sign};
 use reqwest::{Response, StatusCode, header};
 
 use crate::identity::Identity;
+use crate::pin::{PinError, PinStore};
+use crate::schedule::SmtpFallback;
 
 const MESSAGES_PATH: &str = "/v1/messages";
 const CAPABILITIES_PATH: &str = "/v1/capabilities";
@@ -30,6 +32,9 @@ pub enum SendError {
     /// The request cannot be signed.
     #[error(transparent)]
     Sign(#[from] SignError),
+    /// The pin learned from the receiver cannot be stored.
+    #[error(transparent)]
+    Pin(#[from] PinError),
 }
 
 /// Why SMTP may be used right away.
@@ -37,9 +42,7 @@ pub enum SendError {
 pub enum SmtpReason {
     /// The domain publishes no usable `_idmx` SVCB record.
     NotAdvertised,
-    /// Discovery failed. Without a valid pin this means SMTP
-    /// (`spec/discovery.md` §3.2); a pin-aware caller must treat it as
-    /// [`Attempt::TryLater`] instead.
+    /// Discovery failed and no valid pin exists (`spec/discovery.md` §3.2).
     DiscoveryFailed(DiscoveryError),
     /// Receiver and sender share no major version (`spec/discovery.md` §5).
     NoCommonVersion,
@@ -53,9 +56,11 @@ pub enum Attempt {
     Completed(DeliveryResult),
     /// Permanent request-level failure: bounce. Never retry, never use SMTP.
     Rejected(Problem),
-    /// Temporary failure: retry IDMX with the same idempotency key. SMTP only
-    /// after the fallback window has passed.
+    /// Temporary failure: retry IDMX with the same idempotency key.
     TryLater {
+        /// Whether this failure counts towards SMTP fallback (5xx) or forbids
+        /// it (e.g. `rate_limited`).
+        fallback: SmtpFallback,
         /// The receiver's problem document, if it sent one.
         problem: Option<Problem>,
         /// The receiver's `Retry-After`, if it sent one in seconds.
@@ -96,31 +101,52 @@ impl Sender {
     }
 
     /// Discovers the recipient domain's endpoints and attempts delivery to
-    /// them in priority order.
+    /// them in priority order. Follows the decision table of
+    /// `spec/discovery.md` §3.2: without a usable DNS answer a valid pin
+    /// keeps delivery on IDMX, and every capabilities fetch refreshes the pin.
     ///
     /// # Errors
     ///
-    /// Returns [`SendError`] if the request cannot be built. Everything that
-    /// happens on the network is reported as an [`Attempt`].
+    /// Returns [`SendError`] if the request cannot be built or the pin cannot
+    /// be stored. Everything that happens on the network is reported as an
+    /// [`Attempt`].
     pub async fn send(
         &self,
         envelope: &Envelope,
         message: &[u8],
         idempotency_key: &IdempotencyKey,
+        pins: &mut PinStore,
     ) -> Result<Attempt, SendError> {
-        let endpoints = match discover(&self.resolver, envelope.recipient_domain()).await {
-            Ok(Discovery::Supported(endpoints)) => endpoints,
-            Ok(Discovery::Unsupported) => return Ok(Attempt::UseSmtp(SmtpReason::NotAdvertised)),
-            Err(error) => return Ok(Attempt::UseSmtp(SmtpReason::DiscoveryFailed(error))),
+        let domain = envelope.recipient_domain();
+        let pinned = || {
+            pins.lookup(domain, SystemTime::now())
+                .map(<[String]>::to_vec)
+        };
+        let authorities: Vec<String> = match discover(&self.resolver, domain).await {
+            Ok(Discovery::Supported(endpoints)) => {
+                endpoints.iter().map(Endpoint::authority).collect()
+            }
+            Ok(Discovery::Unsupported) => match pinned() {
+                Some(authorities) => authorities,
+                None => return Ok(Attempt::UseSmtp(SmtpReason::NotAdvertised)),
+            },
+            Err(error) => match pinned() {
+                Some(authorities) => authorities,
+                None => return Ok(Attempt::UseSmtp(SmtpReason::DiscoveryFailed(error))),
+            },
         };
 
         let mut last = Attempt::UseSmtp(SmtpReason::NotAdvertised);
-        for endpoint in endpoints {
-            let authority = endpoint.authority();
+        for authority in &authorities {
             let origin = format!("https://{authority}");
-            last = self
-                .deliver_via(&origin, &authority, envelope, message, idempotency_key)
+            let (attempt, capabilities) = self
+                .attempt(&origin, authority, envelope, message, idempotency_key)
                 .await?;
+            if let Some(capabilities) = capabilities {
+                let max_age = capabilities.pin_max_age();
+                pins.set(domain, &authorities, max_age, SystemTime::now())?;
+            }
+            last = attempt;
             // Only an unreachable endpoint justifies trying the next one.
             if !matches!(last, Attempt::Unreachable(_)) {
                 break;
@@ -143,15 +169,30 @@ impl Sender {
         message: &[u8],
         idempotency_key: &IdempotencyKey,
     ) -> Result<Attempt, SendError> {
+        let (attempt, _) = self
+            .attempt(origin, authority, envelope, message, idempotency_key)
+            .await?;
+        Ok(attempt)
+    }
+
+    /// One attempt, plus the capabilities document if the origin served one.
+    async fn attempt(
+        &self,
+        origin: &str,
+        authority: &str,
+        envelope: &Envelope,
+        message: &[u8],
+        idempotency_key: &IdempotencyKey,
+    ) -> Result<(Attempt, Option<Capabilities>), SendError> {
         self.check_sender(envelope)?;
         let body = encode(envelope, message)?;
 
         let capabilities = match self.fetch_capabilities(origin).await {
             Ok(capabilities) => capabilities,
-            Err(attempt) => return Ok(attempt),
+            Err(attempt) => return Ok((attempt, None)),
         };
         if let Some(attempt) = check_limits(&capabilities, envelope, body.bytes.len()) {
-            return Ok(attempt);
+            return Ok((attempt, Some(capabilities)));
         }
 
         let headers = sign(
@@ -179,10 +220,11 @@ impl Sender {
             .body(body.bytes)
             .send()
             .await;
-        Ok(match response {
+        let attempt = match response {
             Ok(response) => classify_delivery(response).await,
             Err(error) => Attempt::Unreachable(error),
-        })
+        };
+        Ok((attempt, Some(capabilities)))
     }
 
     fn check_sender(&self, envelope: &Envelope) -> Result<(), SendError> {
@@ -281,6 +323,12 @@ async fn classify_failure(response: Response) -> Attempt {
     match (kind, class) {
         (Some(ProblemKind::UnsupportedVersion), _) => Attempt::UseSmtp(SmtpReason::NoCommonVersion),
         (_, FailureClass::Temporary) => Attempt::TryLater {
+            // `spec/errors.md` §3: only a request-level 5xx may end in SMTP.
+            fallback: if status.is_server_error() {
+                SmtpFallback::AfterWindow
+            } else {
+                SmtpFallback::Never
+            },
             problem,
             retry_after,
         },

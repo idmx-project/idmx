@@ -21,6 +21,7 @@ rustls = { version = "0.23.45", default-features = false, features = ["ring", "s
 clap = { version = "4.6.7", features = ["derive"] }
 getrandom = "0.4.3"
 thiserror = "2.0.20"
+serde.workspace = true
 serde_json.workspace = true
 ed25519-dalek = { version = "3.0.0", features = ["pkcs8", "pem"] }
 

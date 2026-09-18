@@ -2,11 +2,15 @@
 
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use hickory_resolver::TokioResolver;
 use idmx_client::identity::Identity;
+use idmx_client::pin::PinStore;
+use idmx_client::queue::{Disposition, Event, Mta, Spool, random_key};
+use idmx_client::schedule::RetryPolicy;
 use idmx_client::sender::{Attempt, Sender, SmtpReason, http_client_builder};
 use idmx_core::discovery::{Discovery, discover, lookup_key};
 use idmx_core::domain::Domain;
@@ -40,6 +44,52 @@ enum Command {
     },
     #[command(about = "Deliver one RFC 5322 message over IDMX")]
     Send(SendArgs),
+    #[command(subcommand, about = "Spool with retries and SMTP fallback")]
+    Queue(QueueCommand),
+}
+
+#[derive(Subcommand)]
+enum QueueCommand {
+    #[command(about = "Queue one RFC 5322 message for one recipient domain")]
+    Add {
+        #[arg(long)]
+        spool: PathBuf,
+        #[arg(help = "Envelope sender; omit for the null reverse-path (DSNs)")]
+        #[arg(long)]
+        from: Option<Mailbox>,
+        #[arg(help = "Recipients, all in one domain")]
+        #[arg(long, required = true, num_args = 1..)]
+        to: Vec<Mailbox>,
+        #[arg(help = "Message file; standard input if omitted")]
+        #[arg(long)]
+        message: Option<PathBuf>,
+    },
+    #[command(about = "Make one attempt for every due job (run it from a timer)")]
+    Run(RunArgs),
+}
+
+#[derive(clap::Args)]
+struct RunArgs {
+    #[arg(long)]
+    spool: PathBuf,
+    #[arg(help = "PKCS#8 PEM Ed25519 private key of the sending domain")]
+    #[arg(long)]
+    key: PathBuf,
+    #[arg(help = "Name the public key is published under: <selector>._idmxkey.<domain>")]
+    #[arg(long)]
+    keyid: KeyId,
+    #[arg(help = "Additional trusted root certificate (PEM), e.g. a devnet CA")]
+    #[arg(long)]
+    ca: Option<PathBuf>,
+    #[arg(help = "Sendmail-compatible command for the SMTP hand-off")]
+    #[arg(long, default_value = "/usr/sbin/sendmail")]
+    sendmail: PathBuf,
+    #[arg(help = "Seconds before the first retry (testing; the specification says 60)")]
+    #[arg(long)]
+    first_delay: Option<u64>,
+    #[arg(help = "Seconds of the SMTP fallback window (testing; the specification says 7200)")]
+    #[arg(long)]
+    fallback_window: Option<u64>,
 }
 
 #[derive(clap::Args)]
@@ -87,6 +137,19 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Command::Send(args) => send(resolver, args).await,
+        Command::Queue(QueueCommand::Add {
+            spool,
+            from,
+            to,
+            message,
+        }) => {
+            let envelope =
+                Envelope::new(ReversePath::from(from), to).context("building envelope")?;
+            let id = Spool::open(&spool)?.add(&envelope, &read_message(message.as_deref())?)?;
+            println!("queued as {id}");
+            Ok(())
+        }
+        Command::Queue(QueueCommand::Run(args)) => run_queue(resolver, args).await,
     }
 }
 
@@ -130,22 +193,67 @@ async fn send(resolver: TokioResolver, args: SendArgs) -> Result<()> {
     let message = read_message(args.message.as_deref())?;
     let idempotency_key = match args.idempotency_key {
         Some(key) => key,
-        None => random_idempotency_key()?,
+        None => random_key()?,
     };
     let sender = Sender::new(http_client(args.ca.as_deref())?, resolver, identity);
 
     eprintln!("idempotency key: {idempotency_key}");
-    let attempt = match &args.endpoint {
-        Some(authority) => {
-            let origin = format!("https://{authority}");
-            sender
-                .deliver_via(&origin, authority, &envelope, &message, &idempotency_key)
-                .await
-        }
-        None => sender.send(&envelope, &message, &idempotency_key).await,
+    let attempt = if let Some(authority) = &args.endpoint {
+        let origin = format!("https://{authority}");
+        sender
+            .deliver_via(&origin, authority, &envelope, &message, &idempotency_key)
+            .await
+    } else {
+        let mut pins = PinStore::in_memory();
+        sender
+            .send(&envelope, &message, &idempotency_key, &mut pins)
+            .await
     }
     .context("preparing delivery")?;
     report(attempt)
+}
+
+async fn run_queue(resolver: TokioResolver, args: RunArgs) -> Result<()> {
+    let identity = load_identity(&args.key, args.keyid)?;
+    let sender = Sender::new(http_client(args.ca.as_deref())?, resolver, identity);
+    let spool = Spool::open(&args.spool)?;
+    let mut pins = PinStore::open(&spool.pins_path())?;
+    let mut policy = RetryPolicy::default();
+    if let Some(seconds) = args.first_delay {
+        policy.first_delay = Duration::from_secs(seconds);
+    }
+    if let Some(seconds) = args.fallback_window {
+        policy.fallback_window = Duration::from_secs(seconds);
+    }
+
+    let mut mta = Mta {
+        sender: &sender,
+        pins: &mut pins,
+        policy: &policy,
+        sendmail: &args.sendmail,
+    };
+    let now = SystemTime::now();
+    for event in spool.run_due(&mut mta, now).await? {
+        print_event(&event, now);
+    }
+    println!("{} job(s) still queued", spool.pending()?);
+    Ok(())
+}
+
+fn print_event(event: &Event, now: SystemTime) {
+    let status = match &event.disposition {
+        Disposition::Accepted => "accepted over IDMX".to_owned(),
+        Disposition::HandedToSmtp => "handed to SMTP".to_owned(),
+        Disposition::RetryAt(time) => format!(
+            "retry in {} s",
+            time.duration_since(now).unwrap_or_default().as_secs()
+        ),
+        Disposition::HandOffFailed(error) => format!("SMTP hand-off failed, still queued: {error}"),
+        Disposition::Failed(reason) => format!("failed: {reason}"),
+    };
+    for recipient in &event.recipients {
+        println!("{} {recipient}: {status}", event.job);
+    }
 }
 
 /// Prints the outcome; fails unless every recipient was accepted.
@@ -205,22 +313,6 @@ fn read_message(path: Option<&Path>) -> Result<Vec<u8>> {
         .read_to_end(&mut message)
         .context("reading message from standard input")?;
     Ok(message)
-}
-
-/// 128 random bits, hex encoded.
-fn random_idempotency_key() -> Result<IdempotencyKey> {
-    let mut bytes = [0_u8; 16];
-    getrandom::fill(&mut bytes).context("reading system randomness")?;
-    let hex: String = bytes
-        .iter()
-        .flat_map(|byte| [byte >> 4, byte & 0xf])
-        .map(hex_digit)
-        .collect();
-    hex.parse().context("building idempotency key")
-}
-
-fn hex_digit(nibble: u8) -> char {
-    char::from_digit(u32::from(nibble), 16).unwrap_or('0')
 }
 
 /// HTTPS only, system roots plus `ca`.
