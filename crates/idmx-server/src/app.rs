@@ -10,6 +10,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use idmx_core::body::decode;
+use idmx_core::capabilities::{Capabilities, VERSION};
 use idmx_core::envelope::Envelope;
 use idmx_core::idempotency::IdempotencyKey;
 use idmx_core::mailbox::Mailbox;
@@ -18,7 +19,6 @@ use idmx_core::result::{DeliveryResult, Outcome, RecipientResult};
 use idmx_core::signing::{
     self, SignatureHeaders, UnverifiedSignature, VerifiedSignature, content_digest,
 };
-use serde_json::json;
 
 use crate::config::Config;
 use crate::error::{DeliveryError, problem_response};
@@ -47,13 +47,12 @@ pub fn router(app: App) -> Router {
 }
 
 async fn capabilities(State(app): State<Arc<App>>) -> Response {
-    let body = json!({
-        "versions": ["v1"],
-        "max_message_size": app.config.max_message_size,
-        "max_recipients": app.config.max_recipients,
-        "discovery_pin_max_age": app.config.discovery_pin_max_age,
-        "features": {},
-    });
+    let body = Capabilities {
+        versions: vec![VERSION.to_owned()],
+        max_message_size: app.config.max_message_size as u64,
+        max_recipients: app.config.max_recipients as u64,
+        discovery_pin_max_age: app.config.discovery_pin_max_age,
+    };
     let mut response = axum::Json(body).into_response();
     response.headers_mut().insert(
         header::CACHE_CONTROL,

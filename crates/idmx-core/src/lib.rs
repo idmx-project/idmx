@@ -3,6 +3,7 @@
 //! - [`domain`]: the validated DNS domain, IDMX's unit of identity.
 //! - [`mailbox`], [`envelope`], [`idempotency`], [`body`]: the delivery request
 //!   (`spec/delivery.md` §2–§4).
+//! - [`capabilities`]: the capabilities document.
 //! - [`result`], [`problem`]: the delivery response (`spec/delivery.md` §5,
 //!   `spec/errors.md`).
 //! - [`key`]: key identifiers and the DNS key record (`spec/signing.md` §4).
@@ -14,6 +15,7 @@
 //! specification and never defines it.
 
 pub mod body;
+pub mod capabilities;
 pub mod discovery;
 pub mod domain;
 pub mod envelope;
