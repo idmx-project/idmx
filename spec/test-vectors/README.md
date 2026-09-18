@@ -6,6 +6,7 @@ deterministic, so a conforming signer reproduces `expected` byte for byte.
 | File | Content |
 |---|---|
 | `signing-basic.json` | Inputs and expected `Content-Digest`, `Signature-Input`, signature base, and `Signature` |
+| `signing-negative.json` | Cases derived from `signing-basic.json` by replacing single values; each names the outcome a receiver must produce (`valid` or `invalid_signature`) |
 | `signing-basic.body` | Exact HTTP content (CRLF line endings; do not normalize) |
 | `delivery-basic.json` | Body layout: decoding `signing-basic.body` must yield this envelope and `delivery-basic.eml` |
 | `delivery-basic.eml` | The raw message inside the body (CRLF; do not normalize) |

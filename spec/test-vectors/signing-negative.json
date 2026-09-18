@@ -1,0 +1,93 @@
+{
+  "description": "Negative (and boundary) cases for signing.md section 7. Every case starts from signing-basic.json and replaces only the members it names: `now` (the receiver's clock; default = `created` of the base), `request` members, `headers` members (content_digest, signature_input, signature), `key_record_txt`. `expected` is `valid` or the problem identifier the receiver must answer with.",
+  "base": "signing-basic.json",
+  "cases": [
+    {
+      "name": "created-at-window-edge",
+      "description": "Receiver clock exactly 5 minutes after `created`: still inside the window.",
+      "now": 1789668300,
+      "expected": "valid"
+    },
+    {
+      "name": "created-expired",
+      "description": "Receiver clock 5 minutes and 1 second after `created`.",
+      "now": 1789668301,
+      "expected": "invalid_signature"
+    },
+    {
+      "name": "created-in-future",
+      "description": "Receiver clock 5 minutes and 1 second before `created`.",
+      "now": 1789667699,
+      "expected": "invalid_signature"
+    },
+    {
+      "name": "wrong-digest",
+      "description": "Content-Digest is a well-formed sha-256 digest of other content.",
+      "headers": {
+        "content_digest": "sha-256=:kjuAVxEEHiOpnwfhRlkcUAJh0cKJ9iqdOfhYHOuKEMo=:"
+      },
+      "expected": "invalid_signature"
+    },
+    {
+      "name": "revoked-key",
+      "description": "The key record has an empty p= tag.",
+      "key_record_txt": "v=IDMX1; k=ed25519; p=",
+      "expected": "invalid_signature"
+    },
+    {
+      "name": "other-key",
+      "description": "The key record holds a different public key (RFC 8032 section 7.1 TEST 2).",
+      "key_record_txt": "v=IDMX1; k=ed25519; p=PUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw=",
+      "expected": "invalid_signature"
+    },
+    {
+      "name": "other-authority",
+      "description": "The request is replayed to a different receiver host.",
+      "request": {
+        "authority": "idmx.attacker.example"
+      },
+      "expected": "invalid_signature"
+    },
+    {
+      "name": "other-idempotency-key",
+      "description": "The Idempotency-Key header was replaced after signing.",
+      "request": {
+        "idempotency_key": "01J8ZQ4M9X6T3V5B7N2K0HXXXX"
+      },
+      "expected": "invalid_signature"
+    },
+    {
+      "name": "missing-covered-component",
+      "description": "Signature-Input does not cover idempotency-key.",
+      "headers": {
+        "signature_input": "idmx=(\"@method\" \"@authority\" \"@path\" \"content-digest\" \"content-type\" \"content-length\");created=1789668000;keyid=\"s1._idmxkey.sender.example\";alg=\"ed25519\";tag=\"idmx-v1\""
+      },
+      "expected": "invalid_signature"
+    },
+    {
+      "name": "other-algorithm",
+      "description": "alg is not ed25519.",
+      "headers": {
+        "signature_input": "idmx=(\"@method\" \"@authority\" \"@path\" \"content-digest\" \"content-type\" \"content-length\" \"idempotency-key\");created=1789668000;keyid=\"s1._idmxkey.sender.example\";alg=\"rsa-pss-sha512\";tag=\"idmx-v1\""
+      },
+      "expected": "invalid_signature"
+    },
+    {
+      "name": "other-tag",
+      "description": "No signature carries tag idmx-v1, so the request counts as unsigned.",
+      "headers": {
+        "signature_input": "idmx=(\"@method\" \"@authority\" \"@path\" \"content-digest\" \"content-type\" \"content-length\" \"idempotency-key\");created=1789668000;keyid=\"s1._idmxkey.sender.example\";alg=\"ed25519\";tag=\"idmx-v2\""
+      },
+      "expected": "invalid_signature"
+    },
+    {
+      "name": "foreign-sender-domain",
+      "description": "A correct signature by s1._idmxkey.other.example, published with the same public key; the envelope `from` is in sender.example, not in the signing domain.",
+      "headers": {
+        "signature_input": "idmx=(\"@method\" \"@authority\" \"@path\" \"content-digest\" \"content-type\" \"content-length\" \"idempotency-key\");created=1789668000;keyid=\"s1._idmxkey.other.example\";alg=\"ed25519\";tag=\"idmx-v1\"",
+        "signature": "idmx=:Y0pJ5HF9K8cnjSNfkGyU6Y03hT+aMGja681MCqU/AQP0JItBhnErNBLHR8XBu+bDzQxShBBKu3GDdvZySJ6bDA==:"
+      },
+      "expected": "invalid_signature"
+    }
+  ]
+}

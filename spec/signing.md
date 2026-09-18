@@ -244,5 +244,7 @@ inputs, key pair, and the expected `Content-Digest`, `Signature-Input`,
 signature base, and `Signature`. Ed25519 is deterministic, so signers must
 reproduce the expected values byte for byte.
 
-TODO: negative vectors (expired `created`, wrong digest, revoked key) as data
-rather than implementation tests.
+`signing-negative.json` holds negative and boundary cases as data: each case
+replaces single values of the basic vector (receiver clock, a header, the key
+record, a request component) and names the required outcome. A conforming
+verifier produces that outcome for every case.
