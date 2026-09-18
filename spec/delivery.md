@@ -99,15 +99,15 @@ TODO: tighten local-part syntax (RFC 5321 / RFC 6531 alignment, quoting).
   bits of entropy (UUID and ULID both fit).
 - The key covers the whole delivery (all recipients) and is covered by the
   signature.
-- Receivers scope keys **per signing domain** and remember each key and its
-  response for at least the maximum sender retry window (e.g. 7 days).
+- Receivers scope keys **per signing domain** and MUST remember each key and
+  its response for **at least 7 days** after first seeing the key.
+- Senders MUST NOT retry a request under the same key for longer than 7 days
+  after the first attempt; after that they give up and bounce.
 - Same key, same `Content-Digest` → the receiver MUST return the **original
   response** (status and body) and MUST NOT deliver again.
 - Same key, different `Content-Digest` → `idempotency_conflict` (permanent).
 - Retries of the *same* request re-sign with a fresh `created` and reuse the key
   (`signing.md` §3).
-
-TODO: exact minimum retention.
 
 ## 5. Response
 
@@ -164,7 +164,7 @@ From `GET /v1/capabilities`:
 
 | Field | Meaning |
 |---|---|
-| `max_message_size` | Largest accepted request body in bytes. Floor TODO (e.g. ≥ 25 MB). Over limit → `message_too_large`. |
+| `max_message_size` | Largest accepted request body in bytes. REQUIRED. MUST be ≥ **26 214 400** (25 MiB); there is **no upper limit**. Over limit → `message_too_large`. |
 | `max_recipients` | Largest accepted `to` length. Absent = 100. MUST be ≥ 100. Over limit → `invalid_request`. |
 
 ## 7. Future extensions (informative)
@@ -185,12 +185,17 @@ model.
 
 ### 7.2 Large messages
 
-`max_message_size` has a floor, not a cap: a receiver may already advertise
-far more than the floor. Where the receiver *stores* an accepted message
+`max_message_size` has a floor (25 MiB), not a cap: a receiver may already
+advertise far more. The floor guarantees that any two conforming systems can
+exchange ordinary mail; it cannot be "unlimited", because a mandatory minimum
+binds every receiver, however small. The limit counts the whole request body:
+v1 cannot treat text and attachments differently, since the message is opaque. Where the receiver *stores* an accepted message
 (file system, database, S3-compatible object store) is receiver-internal and
 invisible on the wire.
 
-What v1 lacks is a robust *transfer* for very large bodies. Candidates:
+The intended direction for large files is therefore: **the message stays
+small, files travel by reference and are effectively unbounded.** What v1 lacks
+is that transfer mechanism. Candidates:
 
 - **Resumable upload**: the sender uploads the body in ranges to an upload
   resource, then sends a small delivery request that references it (cf. the

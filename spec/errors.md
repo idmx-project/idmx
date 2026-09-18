@@ -71,10 +71,9 @@ delivery with a new idempotency key.
 ## 7. Size limits
 
 - Receiver advertises `max_message_size` in `GET /v1/capabilities`.
-- Spec mandates a floor (e.g. ≥ 25 MB). Over limit → `message_too_large`.
-- No chunked/resumable upload in v1.
-
-TODO: floor value.
+- Every receiver MUST accept at least **25 MiB** (26 214 400 bytes) of request
+  body; there is no upper limit. Over limit → `message_too_large`.
+- No chunked/resumable upload in v1 (`delivery.md` §7.2 sketches the future).
 
 ## 8. Abuse hooks (v1)
 

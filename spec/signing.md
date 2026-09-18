@@ -94,8 +94,10 @@ Signature: idmx=:<base64 64-byte signature>:
 - `@authority` binds the request to the receiver's IDMX host, so a captured
   request cannot be replayed to a different receiver.
 
-TODO: subdomain policy (may `example.org` keys sign for `sub.example.org`?). v1
-draft answer: no — exact match only.
+- The match is **exact**. A key under `example.org` does not authorize
+  `sub.example.org`; there is no organizational-domain or public-suffix logic.
+  A subdomain publishes its own `_idmxkey` records (a CNAME to the parent's
+  record is sufficient).
 
 ## 3. Timestamp and replay
 
@@ -104,7 +106,7 @@ draft answer: no — exact match only.
 - Retries MUST **re-sign with a fresh `created`** and MUST reuse the **same
   `Idempotency-Key`**.
 - Receivers remember idempotency keys for at least the maximum sender retry
-  window (e.g. 7 days) and return the original result for duplicates. Within
+  window (7 days, `delivery.md` §4) and return the original result for duplicates. Within
   the ±5 min window a replayed request is therefore harmless: it yields the
   stored result and no second delivery.
 
@@ -140,7 +142,11 @@ s1._idmxkey.sender.example. TXT "v=IDMX1; k=ed25519; p=11qYAYKxCrfVS/7TyWQHOg7hc
 
 Receivers cache key records per DNS TTL. DNSSEC is honored when present.
 
-TODO: upper bound on cache lifetime; negative caching.
+- A key record MUST NOT be cached longer than its DNS TTL, and never longer
+  than **1 hour**, so that a revocation takes effect within an hour regardless
+  of TTL mistakes.
+- A negative result (NXDOMAIN, no record) MUST NOT be cached longer than
+  **5 minutes**, so that a newly published selector becomes usable quickly.
 
 ### 4.4 Rotation and revocation
 
@@ -189,10 +195,44 @@ Any failure except a temporary DNS error → `invalid_signature`.
 
 ## 8. Receiver trace headers
 
-The receiver adds a trace header and `Authentication-Results` before handing
-the message to local delivery.
+Before handing an accepted message to local delivery, the receiver prepends
+two header fields to the message. Only verified requests are delivered, so the
+result is always `pass`.
 
-TODO: trace / `Authentication-Results` header format for IDMX-received mail.
+```text
+Received: from sender.example by idmx.receiver.example with IDMX
+    id 01J8ZQ4M9X6T3V5B7N2K0HCDEF; Thu, 17 Sep 2026 20:00:01 +0000
+Authentication-Results: idmx.receiver.example;
+    idmx=pass header.d=sender.example header.s=s1
+```
+
+### 8.1 `Received`
+
+RFC 5321 §4.4 syntax with:
+
+| Clause | Value |
+|---|---|
+| `from` | The signing domain. The client IP address MAY follow as a comment. |
+| `by` | The receiver's host name. |
+| `with` | The literal protocol keyword `IDMX`. |
+| `id` | The `Idempotency-Key` of the delivery. |
+| `for` | OPTIONAL, and only if the delivery had exactly one recipient. |
+
+### 8.2 `Authentication-Results`
+
+RFC 8601 syntax with the method **`idmx`**:
+
+- `header.d` = signing domain, `header.s` = selector of the `keyid`.
+- The authserv-id is the receiver's host name. As RFC 8601 §5 requires, the
+  receiver MUST remove pre-existing `Authentication-Results` fields that carry
+  its own authserv-id.
+- Results of message-level checks (e.g. `dkim=` for the author's DKIM
+  signature inside the message) MAY be added as usual; they are independent of
+  `idmx=`.
+
+TODO: IANA registrations (`with` protocol type `IDMX`, authentication method
+`idmx`); revisit whether `header.` is the right RFC 8601 property type for
+values taken from the HTTP signature rather than a message header.
 
 ## 9. Test vectors
 

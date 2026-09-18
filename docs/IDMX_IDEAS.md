@@ -927,7 +927,8 @@ Remaining areas still requiring design work:
 - ~~key record format~~ — settled 2026-09-17: DKIM-style TXT `v=IDMX1; k=ed25519; p=<base64>`; empty `p=` revokes. Still open: key cache bounds, subdomain signing policy
 - exact retry schedule and fallback window value
 - pin max-age defaults and pin-failure reporting (TLS-RPT equivalent?)
-- trace / `Authentication-Results` header format for IDMX-received mail
+- ~~trace / `Authentication-Results` header format~~ — settled 2026-09-18, see `spec/signing.md` §8: `Received: … with IDMX id <idempotency-key>` plus `Authentication-Results: …; idmx=pass header.d=… header.s=…`. Still open: IANA registrations
+- settled 2026-09-18 (constants): size floor 25 MiB with no upper limit; idempotency retention and sender retry cap 7 days; signing domain must match exactly (no subdomain inheritance); key cache ≤ DNS TTL ≤ 1 h, negative ≤ 5 min
 - ~~per-recipient result schema~~ — settled 2026-09-18: request-level failures → 4xx/5xx problem; otherwise always `200` with `accepted` / `rejected` / `deferred` per recipient; deferred recipients are retried as a new delivery with a new key. Still open: retry schedule for deferred recipients
 - capabilities document schema; how to reserve room for first-contact friction and attestations
 - abuse-report contact format

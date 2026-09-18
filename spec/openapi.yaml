@@ -131,7 +131,7 @@ components:
       description: |
         Covers the whole delivery (all recipients). Retries re-sign with a
         fresh timestamp but reuse the same key. Receivers remember keys for at
-        least the maximum sender retry window (e.g. 7 days), scoped per signing
+        least 7 days, scoped per signing
         domain. Same key with different content -> `idempotency_conflict`.
         See delivery.md §4.
       schema:
@@ -270,8 +270,10 @@ components:
             pattern: '^v[1-9][0-9]*$'
         max_message_size:
           type: integer
-          description: Bytes. Spec floor TODO (e.g. >= 25 MB). Over limit -> `message_too_large`.
-          minimum: 1
+          description: |
+            Largest accepted request body in bytes. At least 25 MiB; no upper
+            limit. Over limit -> `message_too_large`.
+          minimum: 26214400
         max_recipients:
           type: integer
           minimum: 100
