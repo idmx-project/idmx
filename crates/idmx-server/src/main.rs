@@ -1,7 +1,7 @@
 //! `idmxd`: IDMX receiver daemon, a front door beside the MTA.
 
 use std::path::Path;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, bail};
 use axum_server::tls_rustls::RustlsConfig;
@@ -12,6 +12,10 @@ use idmx_server::keys::DnsKeySource;
 use rustls::ServerConfig;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use tokio::signal::unix::{SignalKind, signal};
+
+/// How long requests in flight may take after a shutdown signal.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -39,14 +43,42 @@ async fn main() -> Result<()> {
     })
     .into_make_service();
 
+    let handle = axum_server::Handle::new();
+    tokio::spawn(shut_down_on_signal(handle.clone()));
+
     match transport {
         Transport::Tls { cert, key } => {
             let tls = RustlsConfig::from_config(tls_config(&cert, &key)?.into());
-            axum_server::bind_rustls(listen, tls).serve(service).await
+            axum_server::bind_rustls(listen, tls)
+                .handle(handle)
+                .serve(service)
+                .await
         }
-        Transport::BehindProxy => axum_server::bind(listen).serve(service).await,
+        Transport::BehindProxy => {
+            axum_server::bind(listen)
+                .handle(handle)
+                .serve(service)
+                .await
+        }
     }
     .with_context(|| format!("serving on {listen}"))
+}
+
+/// SIGTERM (container stop) and SIGINT: finish requests in flight, then exit.
+async fn shut_down_on_signal(handle: axum_server::Handle<std::net::SocketAddr>) {
+    let mut terminate = match signal(SignalKind::terminate()) {
+        Ok(terminate) => terminate,
+        Err(error) => {
+            tracing::warn!(%error, "cannot listen for SIGTERM");
+            return;
+        }
+    };
+    tokio::select! {
+        _ = terminate.recv() => {}
+        _ = tokio::signal::ctrl_c() => {}
+    }
+    tracing::info!("shutting down");
+    handle.graceful_shutdown(Some(SHUTDOWN_GRACE));
 }
 
 fn load_config(path: &Path) -> Result<Config> {
