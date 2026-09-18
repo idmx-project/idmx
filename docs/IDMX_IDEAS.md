@@ -922,13 +922,13 @@ Remaining areas still requiring design work:
 
 - ~~SVCB record parameters~~ — settled 2026-09-17, see `spec/discovery.md`: standard `port` (default 443), fixed path at origin root, no custom SvcParamKeys; h2 mandatory, h3 optional via `alpn`; pin max-age = `discovery_pin_max_age` in the capabilities document
 - ~~resolvers lacking SVCB support~~ — settled 2026-09-17: pin-aware; lookup failure without a pin → SMTP, with a valid pin → keep using the pinned endpoint. Still open: forbid SMTP fallback entirely while pinned?
-- exact envelope schema and endpoint layout (OpenAPI draft)
+- ~~envelope schema and body layout~~ — settled 2026-09-18, see `spec/delivery.md`: `multipart/mixed` with exactly two parts (`application/json` envelope, raw `message/rfc822`); envelope = `from` (mailbox or `null`) + `to`; `Idempotency-Key` = 1–128 chars of `A-Za-z0-9._~-`, scoped per signing domain, reuse with other content → `idempotency_conflict`. Still open: local-part syntax
 - ~~RFC 9421 profile~~ — settled 2026-09-17, see `spec/signing.md`: Ed25519 only; covers `@method`, `@authority`, `@path`, `content-digest`, `content-type`, `content-length`, `idempotency-key`; `sha-256` digest over raw bytes, no canonicalization
 - ~~key record format~~ — settled 2026-09-17: DKIM-style TXT `v=IDMX1; k=ed25519; p=<base64>`; empty `p=` revokes. Still open: key cache bounds, subdomain signing policy
 - exact retry schedule and fallback window value
 - pin max-age defaults and pin-failure reporting (TLS-RPT equivalent?)
 - trace / `Authentication-Results` header format for IDMX-received mail
-- per-recipient result schema and partial-failure retry rules
+- ~~per-recipient result schema~~ — settled 2026-09-18: request-level failures → 4xx/5xx problem; otherwise always `200` with `accepted` / `rejected` / `deferred` per recipient; deferred recipients are retried as a new delivery with a new key. Still open: retry schedule for deferred recipients
 - capabilities document schema; how to reserve room for first-contact friction and attestations
 - abuse-report contact format
 - list semantics (post-v1)

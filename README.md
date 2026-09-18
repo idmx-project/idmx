@@ -5,13 +5,14 @@ mail delivery while preserving existing `user@domain` addresses and SMTP
 compatibility.
 
 **Status: experimental.** Nothing here is stable. The spec is an early draft
-and the crates contain no protocol logic yet.
+and the crates implement only signing and discovery so far.
 
 ## Layout
 
 ```text
 spec/            Specification (source of truth)
   openapi.yaml     OpenAPI 3.1: POST /v1/messages, GET /v1/capabilities
+  delivery.md      Body layout, envelope, idempotency, per-recipient results
   discovery.md     SVCB discovery on _idmx.<domain>, pinning
   signing.md       RFC 9421 signing profile, keys at <selector>._idmxkey.<domain>
   errors.md        Error identifiers, retry and SMTP fallback rules

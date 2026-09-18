@@ -1,0 +1,168 @@
+# IDMX Delivery
+
+Status: **draft**. Baseline: `docs/IDMX_IDEAS.md` (Decisions, 2026-09-17) plus the
+delivery decisions of 2026-09-18 recorded here.
+License: CC-BY-4.0 (see `LICENSE`).
+
+The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as in
+BCP 14 (RFC 2119, RFC 8174).
+
+## 1. Overview
+
+A delivery is one `POST /v1/messages` to the endpoint discovered for the
+recipient domain (`discovery.md`), signed by the sending domain (`signing.md`).
+
+- **One POST per recipient domain.** The message is sent once; the response
+  carries one result per recipient.
+- The payload is **hybrid**: a structured JSON envelope plus the opaque
+  RFC 5322/MIME message, byte-for-byte. DKIM signatures inside the message
+  survive, and SMTP fallback is lossless.
+
+## 2. Request body
+
+`Content-Type: multipart/mixed; boundary=<boundary>` (RFC 2046) with **exactly
+two parts, in this order**:
+
+| # | Part `Content-Type` | Content |
+|---|---|---|
+| 1 | `application/json` | The envelope (§3), UTF-8 |
+| 2 | `message/rfc822` | The message, raw bytes |
+
+- Parts carry no `Content-Transfer-Encoding`; content is binary (8-bit clean).
+  The message MUST NOT be base64- or otherwise re-encoded.
+- Part headers other than `Content-Type` MUST be ignored.
+- Preamble and epilogue SHOULD be empty and MUST be ignored.
+- The sender chooses a boundary (RFC 2046: 1–70 characters) that does not occur
+  in either part.
+- `Content-Length` is REQUIRED (it is a covered signature component). Chunked
+  or resumable upload is not part of v1.
+- A body that does not match this layout → `invalid_request`.
+
+```http
+POST /v1/messages HTTP/2
+content-type: multipart/mixed; boundary=idmx-boundary
+content-length: 352
+idempotency-key: 01J8ZQ4M9X6T3V5B7N2K0HCDEF
+content-digest: sha-256=:...:
+signature-input: idmx=(...);created=...;keyid="s1._idmxkey.sender.example";alg="ed25519";tag="idmx-v1"
+signature: idmx=:...:
+
+--idmx-boundary
+Content-Type: application/json
+
+{"from":"alice@sender.example","to":["bob@receiver.example"]}
+--idmx-boundary
+Content-Type: message/rfc822
+
+From: Alice <alice@sender.example>
+...
+--idmx-boundary--
+```
+
+See `test-vectors/signing-basic.body` for an exact byte sequence.
+
+## 3. Envelope
+
+```json
+{ "from": "alice@sender.example", "to": ["bob@receiver.example"] }
+```
+
+| Field | Requirement |
+|---|---|
+| `from` | REQUIRED. Envelope sender (reverse-path): a mailbox (§3.1), or `null` for the null reverse-path used by DSNs. |
+| `to` | REQUIRED. 1 to `max_recipients` mailboxes, no duplicates, **all in the same domain**. |
+
+- Unknown fields MUST be ignored. This is the extension point for later
+  capabilities (e.g. sender attestations).
+- If `from` is a mailbox, its domain MUST equal the signing domain
+  (`signing.md` §2.5). If `from` is `null`, the signing domain alone identifies
+  the sender.
+- The receiver MUST be responsible for the domain of `to`; otherwise →
+  `policy_rejected` at request level.
+- The envelope has no message identifier: duplicate suppression is the job of
+  `Idempotency-Key` (§4); the RFC 5322 `Message-ID` lives in the message.
+
+### 3.1 Mailbox
+
+`<local-part>@<domain>`, split at the **last** `@`.
+
+- `<domain>`: host-name syntax, IDNA A-labels, compared case-insensitively.
+- `<local-part>`: 1–64 octets of UTF-8 without control characters; opaque to
+  the sender and interpreted only by the receiving domain.
+
+TODO: tighten local-part syntax (RFC 5321 / RFC 6531 alignment, quoting).
+
+## 4. Idempotency
+
+- `Idempotency-Key` is REQUIRED: **1–128 characters of `A-Z a-z 0-9 . _ ~ -`**,
+  chosen by the sender, opaque to the receiver. It SHOULD carry at least 128
+  bits of entropy (UUID and ULID both fit).
+- The key covers the whole delivery (all recipients) and is covered by the
+  signature.
+- Receivers scope keys **per signing domain** and remember each key and its
+  response for at least the maximum sender retry window (e.g. 7 days).
+- Same key, same `Content-Digest` → the receiver MUST return the **original
+  response** (status and body) and MUST NOT deliver again.
+- Same key, different `Content-Digest` → `idempotency_conflict` (permanent).
+- Retries of the *same* request re-sign with a fresh `created` and reuse the key
+  (`signing.md` §3).
+
+TODO: exact minimum retention.
+
+## 5. Response
+
+### 5.1 Request-level failure
+
+If the request as a whole cannot be processed — bad signature, malformed body,
+too large, rate limited, service down — the receiver answers **4xx/5xx with an
+RFC 9457 problem document** and delivers to nobody. Status codes and retry
+semantics: `errors.md` §2.
+
+### 5.2 Per-recipient results
+
+Otherwise the receiver answers **`200 OK`**, always, with one result per
+envelope recipient, **in the order of `to`**:
+
+```json
+{
+  "results": [
+    { "recipient": "bob@receiver.example", "status": "accepted" },
+    { "recipient": "nobody@receiver.example", "status": "rejected",
+      "problem": { "type": "https://idmx-project.org/problems/recipient_not_found" } },
+    { "recipient": "carol@receiver.example", "status": "deferred",
+      "problem": { "type": "https://idmx-project.org/problems/mailbox_full" },
+      "retry_after": 3600 }
+  ]
+}
+```
+
+| `status` | Meaning | Sender action |
+|---|---|---|
+| `accepted` | Receiver took responsibility for this recipient. | Done. |
+| `rejected` | Permanent failure. `problem` REQUIRED. | Bounce to the author. MUST NOT retry, MUST NOT fall back to SMTP. |
+| `deferred` | Temporary failure. `problem` REQUIRED; `retry_after` (seconds) OPTIONAL. | Retry later (§5.3). |
+
+- A 200 response with every recipient `rejected` is valid.
+- The receiver SHOULD validate as much as possible before answering
+  (recipient exists, quota, policy). Failures after `accepted` are reported as
+  an RFC 3464 DSN delivered as a normal message.
+- Unknown fields and unknown `status` values: senders MUST ignore unknown
+  fields and MUST treat an unknown `status` as `deferred`.
+
+### 5.3 Retrying deferred recipients
+
+A retry for deferred recipients is a **new delivery**: a new `Idempotency-Key`
+and an envelope whose `to` lists only the deferred recipients. (Reusing the key
+would replay the original response.)
+
+TODO: retry schedule and give-up time for deferred recipients; whether
+`deferred` may ever fall back to SMTP.
+
+## 6. Capabilities used by delivery
+
+From `GET /v1/capabilities`:
+
+| Field | Meaning |
+|---|---|
+| `max_message_size` | Largest accepted request body in bytes. Floor TODO (e.g. ≥ 25 MB). Over limit → `message_too_large`. |
+| `max_recipients` | Largest accepted `to` length. Absent = 100. MUST be ≥ 100. Over limit → `invalid_request`. |

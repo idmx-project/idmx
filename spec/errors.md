@@ -10,18 +10,31 @@ Errors are **RFC 9457 problem details** (`application/problem+json`).
 
 ## 2. Error identifiers
 
-| Identifier | Class | Retry IDMX | SMTP fallback |
-|---|---|---|---|
-| `recipient_not_found` | permanent | no | never |
-| `invalid_signature` | permanent | no | never |
-| `unsupported_version` | permanent | no | TODO |
-| `unsupported_feature` | permanent | no | TODO |
-| `message_too_large` | permanent | no | never |
-| `policy_rejected` | permanent | no | never |
-| `rate_limited` | temporary | yes, honor `Retry-After` | TODO |
-| `temporary_failure` | temporary | yes | after fallback window |
+"Level": **R** = request-level problem response (nothing delivered), **P** =
+per-recipient `problem` inside a `200` result (`delivery.md` §5).
 
-TODO: confirm table; HTTP status code per identifier.
+| Identifier | Level | HTTP status (R) | Class | Retry IDMX | SMTP fallback |
+|---|---|---|---|---|---|
+| `invalid_request` | R | 400 | permanent | no | never |
+| `invalid_signature` | R | 401 | permanent | no | never |
+| `policy_rejected` | R, P | 403 | permanent | no | never |
+| `recipient_not_found` | P | — | permanent | no | never |
+| `unsupported_version` | R | 404 | permanent | no | TODO |
+| `idempotency_conflict` | R | 409 | permanent | no | never |
+| `message_too_large` | R | 413 | permanent | no | never |
+| `unsupported_feature` | R | 422 | permanent | no | TODO |
+| `rate_limited` | R, P | 429 | temporary | yes, honor `Retry-After` / `retry_after` | TODO |
+| `mailbox_full` | P | — | temporary | yes | TODO |
+| `temporary_failure` | R, P | 503 | temporary | yes | after fallback window (R) |
+
+- `unsupported_version` is the answer to any path under an unknown major
+  version (e.g. `/v2/...`).
+- Permanent per-recipient problems make the result `rejected`; temporary ones
+  make it `deferred`.
+- Senders MUST treat an unknown problem `type` by its HTTP status class: 4xx
+  permanent, 5xx temporary; inside a result, by the result `status`.
+- A 5xx without a problem document, a connection failure, or a TLS failure is
+  handled as `temporary_failure`.
 
 ## 3. Fallback rule
 
@@ -34,14 +47,14 @@ TODO: exact retry schedule and fallback window value.
 
 ## 4. Idempotency
 
-- `Idempotency-Key` is required and covers the whole delivery.
-- Duplicates return the original result. See `signing.md` §3.
+See `delivery.md` §4. Duplicates return the original response; a reused key
+with different content → `idempotency_conflict`.
 
 ## 5. Multi-recipient results
 
-One POST per recipient domain; response carries a **per-recipient result array**.
-
-TODO: per-recipient result schema and partial-failure retry rules.
+See `delivery.md` §5: always `200` with a per-recipient result array once the
+request itself is acceptable. Deferred recipients are retried as a new
+delivery with a new idempotency key.
 
 ## 6. Bounces / DSN
 

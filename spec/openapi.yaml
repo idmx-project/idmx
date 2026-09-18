@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 #
-# IDMX server-to-server API. SKELETON: schemas marked TODO are not settled.
-# Normative companions: discovery.md, signing.md, errors.md.
+# IDMX server-to-server API. DRAFT: points marked TODO are not settled.
+# Normative companions: delivery.md, discovery.md, signing.md, errors.md.
 openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
@@ -42,9 +42,9 @@ paths:
         (recipient exists, quota, policy) before returning 2xx. Failures after
         acceptance are reported as an RFC 3464 DSN delivered as a normal message.
 
-        TODO(open question): exact multipart layout. Current skeleton:
-        `multipart/mixed` with part 1 = `application/json` envelope and
-        part 2 = `message/rfc822` opaque RFC 5322/MIME message.
+        Body: `multipart/mixed` with exactly two parts, in order: part 1
+        `application/json` envelope, part 2 `message/rfc822` raw message bytes
+        (no transfer encoding). See delivery.md §2.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/Signature'
@@ -72,8 +72,9 @@ paths:
       responses:
         '200':
           description: |
-            Request processed; see per-recipient results. A retried delivery
-            with a known `Idempotency-Key` returns the original result.
+            The request itself was acceptable; see per-recipient results
+            (always 200, even if every recipient is rejected). A retried
+            delivery with a known `Idempotency-Key` returns the original response.
           content:
             application/json:
               schema:
@@ -85,6 +86,8 @@ paths:
         '403':
           $ref: '#/components/responses/Problem'
         '404':
+          $ref: '#/components/responses/Problem'
+        '409':
           $ref: '#/components/responses/Problem'
         '413':
           $ref: '#/components/responses/Problem'
@@ -128,10 +131,14 @@ components:
       description: |
         Covers the whole delivery (all recipients). Retries re-sign with a
         fresh timestamp but reuse the same key. Receivers remember keys for at
-        least the maximum sender retry window (e.g. 7 days).
-        TODO(open question): key format and length bounds.
+        least the maximum sender retry window (e.g. 7 days), scoped per signing
+        domain. Same key with different content -> `idempotency_conflict`.
+        See delivery.md §4.
       schema:
         type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[A-Za-z0-9._~-]+$'
     Signature:
       name: Signature
       in: header
@@ -173,32 +180,42 @@ components:
             $ref: '#/components/schemas/Problem'
 
   schemas:
+    Mailbox:
+      type: string
+      description: |
+        `<local-part>@<domain>`, split at the last `@`. Domain in host-name
+        syntax (IDNA A-labels); local-part 1-64 octets of UTF-8 without control
+        characters. See delivery.md §3.1.
+      maxLength: 320
+      pattern: '^[^@\s][^\s]*@[A-Za-z0-9.-]+$'
+
     Envelope:
       $id: https://idmx-project.org/schemas/v1/envelope
       description: |
-        Structured delivery envelope. Unknown fields MUST be ignored (leaves
-        room for later capabilities such as sender attestations).
-        TODO(open question): exact envelope schema.
+        Structured delivery envelope (delivery.md §3). Unknown fields MUST be
+        ignored (leaves room for later capabilities such as sender attestations).
       type: object
       required: [from, to]
       properties:
         from:
-          type: string
-          description: Envelope sender (`user@domain`). Domain MUST match the signing domain of the transport signature.
+          description: |
+            Envelope sender. A mailbox whose domain MUST equal the signing
+            domain, or `null` for the null reverse-path (DSNs).
+          oneOf:
+            - $ref: '#/components/schemas/Mailbox'
+            - type: 'null'
         to:
           type: array
           minItems: 1
-          description: Recipients; all MUST share one domain.
+          uniqueItems: true
+          description: Recipients; all MUST share one domain. At most `max_recipients`.
           items:
-            type: string
-        message_id:
-          type: string
-          description: TODO(open question) — relationship to RFC 5322 Message-ID and to Idempotency-Key.
+            $ref: '#/components/schemas/Mailbox'
       additionalProperties: true
 
     DeliveryResult:
       $id: https://idmx-project.org/schemas/v1/delivery-result
-      description: TODO(open question) — per-recipient result schema and partial-failure retry rules.
+      description: Per-recipient outcomes (delivery.md §5.2).
       type: object
       required: [results]
       properties:
@@ -214,13 +231,21 @@ components:
       required: [recipient, status]
       properties:
         recipient:
-          type: string
+          $ref: '#/components/schemas/Mailbox'
         status:
           type: string
-          enum: [accepted, rejected, deferred]
+          description: |
+            `accepted`; `rejected` (permanent, never retry, never SMTP
+            fallback); `deferred` (temporary, retry as a new delivery). Senders
+            MUST treat unknown values as `deferred`.
+          examples: [accepted, rejected, deferred]
         problem:
           $ref: '#/components/schemas/Problem'
-          description: Present when status is not `accepted`.
+          description: REQUIRED unless status is `accepted`.
+        retry_after:
+          type: integer
+          minimum: 0
+          description: Seconds; only meaningful with `deferred`.
       additionalProperties: true
 
     Capabilities:
@@ -235,6 +260,11 @@ components:
           type: integer
           description: Bytes. Spec floor TODO (e.g. >= 25 MB). Over limit -> `message_too_large`.
           minimum: 1
+        max_recipients:
+          type: integer
+          minimum: 100
+          default: 100
+          description: Largest accepted `to` length. Over limit -> `invalid_request`.
         discovery_pin_max_age:
           type: integer
           minimum: 0
@@ -260,6 +290,7 @@ components:
           type: string
           format: uri
           examples:
+            - https://idmx-project.org/problems/invalid_request
             - https://idmx-project.org/problems/recipient_not_found
             - https://idmx-project.org/problems/invalid_signature
             - https://idmx-project.org/problems/unsupported_version
@@ -268,6 +299,8 @@ components:
             - https://idmx-project.org/problems/rate_limited
             - https://idmx-project.org/problems/policy_rejected
             - https://idmx-project.org/problems/message_too_large
+            - https://idmx-project.org/problems/idempotency_conflict
+            - https://idmx-project.org/problems/mailbox_full
         title:
           type: string
         status:
