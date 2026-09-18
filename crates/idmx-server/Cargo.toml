@@ -12,6 +12,7 @@ name = "idmxd"
 path = "src/main.rs"
 
 [dependencies]
+anyhow.workspace = true
 idmx-core.workspace = true
 
 [lints]

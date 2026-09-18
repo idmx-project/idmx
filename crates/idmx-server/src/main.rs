@@ -1,5 +1,7 @@
 //! `idmxd`: IDMX receiver daemon, a front door beside the MTA.
 
-fn main() {
-    eprintln!("idmxd: not implemented yet");
+use anyhow::{Result, bail};
+
+fn main() -> Result<()> {
+    bail!("idmxd is not implemented yet");
 }
