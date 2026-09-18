@@ -22,6 +22,7 @@ it doubles as that domain's sender.
 ./devnet/up.sh        # generate keys/certs/zones, build image, start
 ./devnet/flow1.sh     # flow 1: modern -> modern, with checks
 ./devnet/flow2.sh     # flow 2: SMTP fallback, with checks (stops/starts idmx-domain-b)
+./devnet/flow3.sh     # flow 3: idmx-conformance against both receivers
 ./devnet/down.sh      # stop and remove the network
 ```
 

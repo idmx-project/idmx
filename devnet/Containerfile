@@ -1,4 +1,4 @@
-# Builds idmxd and idmx for the devnet. Context: repository root.
+# Builds idmxd, idmx, and idmx-conformance for the devnet. Context: repository root.
 FROM docker.io/library/rust:1-slim-bookworm AS build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
@@ -6,15 +6,15 @@ COPY crates ./crates
 # Integration tests read spec/test-vectors at test time only; the build does not need spec/.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release --locked --bin idmxd --bin idmx \
-    && cp target/release/idmxd target/release/idmx /usr/local/bin/
+    cargo build --release --locked --bin idmxd --bin idmx --bin idmx-conformance \
+    && cp target/release/idmxd target/release/idmx target/release/idmx-conformance /usr/local/bin/
 
 FROM docker.io/library/debian:bookworm-slim
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ca-certificates postfix \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=build /usr/local/bin/idmxd /usr/local/bin/idmx /usr/local/bin/
+COPY --from=build /usr/local/bin/idmxd /usr/local/bin/idmx /usr/local/bin/idmx-conformance /usr/local/bin/
 # Flow 2: the same image also runs the Postfix containers.
 COPY devnet/postfix.sh /usr/local/bin/postfix.sh
 ENTRYPOINT ["idmxd"]
