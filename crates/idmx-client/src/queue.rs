@@ -6,19 +6,22 @@
 //! <spool>/queue/<id>.eml    the message      <spool>/failed/     given-up jobs
 //! ```
 //!
-//! Generating the RFC 3464 DSN for a failed job is left to the operator's
-//! MTA tooling; failed jobs are kept in `failed/` with the reason.
+//! A failed job is kept in `failed/` with the reason, and its envelope sender
+//! gets an RFC 3464 DSN ([`crate::dsn`]), queued here like any other message.
+//! A message with the null reverse-path (itself a DSN) is never bounced.
 
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use idmx_core::envelope::{Envelope, EnvelopeError};
+use idmx_core::envelope::{Envelope, EnvelopeError, ReversePath};
 use idmx_core::idempotency::{IdempotencyKey, IdempotencyKeyError};
 use idmx_core::mailbox::Mailbox;
+use idmx_core::problem::Problem;
 use idmx_core::result::{DeliveryResult, Outcome};
 use serde::{Deserialize, Serialize};
 
+use crate::dsn::{self, FailureReason};
 use crate::pin::PinStore;
 use crate::schedule::{History, RetryPolicy, SmtpFallback, Step};
 use crate::sender::{Attempt, SendError, Sender};
@@ -103,8 +106,9 @@ pub enum Disposition {
     RetryAt(SystemTime),
     /// SMTP was due but the MTA did not take the message; still queued.
     HandOffFailed(String),
-    /// Given up (permanent rejection or give-up time); moved to `failed/`.
-    Failed(String),
+    /// Given up (permanent rejection or give-up time); moved to `failed/` and
+    /// bounced.
+    Failed(FailureReason),
 }
 
 /// Everything [`Spool::run_due`] needs besides the spool itself.
@@ -246,8 +250,9 @@ impl Spool {
                 if !sorted.accepted.is_empty() {
                     event(&sorted.accepted, Disposition::Accepted);
                 }
-                for (recipient, reason) in sorted.rejected {
-                    self.record_failure(id, &job, std::slice::from_ref(&recipient), &reason)?;
+                for (recipient, problem) in sorted.rejected {
+                    let reason = FailureReason::Rejected(problem);
+                    self.fail(id, &job, std::slice::from_ref(&recipient), &reason, mta)?;
                     event(&[recipient], Disposition::Failed(reason));
                 }
                 if sorted.deferred.is_empty() {
@@ -265,8 +270,8 @@ impl Spool {
                 }
             }
             Attempt::Rejected(problem) => {
-                let reason = problem.problem_type.to_string();
-                self.record_failure(id, &job, all, &reason)?;
+                let reason = FailureReason::Rejected(problem);
+                self.fail(id, &job, all, &reason, mta)?;
                 event(all, Disposition::Failed(reason));
                 return self.remove(id);
             }
@@ -345,8 +350,8 @@ impl Spool {
             }
             Step::UseSmtp => self.smtp(id, job, message, mta, now, event),
             Step::GiveUp => {
-                let reason = "gave up after the retry period".to_owned();
-                self.record_failure(id, &job, job.envelope.to(), &reason)?;
+                let reason = FailureReason::GaveUp;
+                self.fail(id, &job, job.envelope.to(), &reason, mta)?;
                 event(job.envelope.to(), Disposition::Failed(reason));
                 self.remove(id)
             }
@@ -422,28 +427,45 @@ impl Spool {
         Ok(())
     }
 
-    /// Keeps what a bounce needs: who, why, and the message.
-    fn record_failure(
+    /// Records the failure in `failed/` and queues the bounce.
+    fn fail(
         &self,
         id: &str,
         job: &Job,
         recipients: &[Mailbox],
-        reason: &str,
+        reason: &FailureReason,
+        mta: &Mta<'_>,
     ) -> Result<(), QueueError> {
         let record = serde_json::json!({
             "from": job.envelope.from(),
             "recipients": recipients,
-            "reason": reason,
+            "reason": reason.to_string(),
         });
         let path = self
             .failed_dir()
             .join(format!("{id}.{}.json", job.idempotency_key));
         std::fs::write(&path, record.to_string()).map_err(io_error(&path))?;
 
-        let message = self.failed_dir().join(format!("{id}.eml"));
-        std::fs::copy(self.message_path(id), &message)
-            .map(drop)
-            .map_err(io_error(&message))
+        let message_path = self.message_path(id);
+        let message = std::fs::read(&message_path).map_err(io_error(&message_path))?;
+        let kept = self.failed_dir().join(format!("{id}.eml"));
+        std::fs::write(&kept, &message).map_err(io_error(&kept))?;
+
+        // Never bounce a bounce.
+        let ReversePath::Mailbox(original_sender) = job.envelope.from() else {
+            return Ok(());
+        };
+        let report = dsn::Report {
+            reporting_domain: mta.sender.signing_domain(),
+            original_sender,
+            recipients,
+            reason,
+            message: &message,
+        };
+        let unique = random_key()?;
+        let bounce = dsn::render(&report, unique.as_str(), SystemTime::now());
+        let envelope = Envelope::new(ReversePath::Null, vec![original_sender.clone()])?;
+        self.add(&envelope, &bounce).map(drop)
     }
 }
 
@@ -457,7 +479,7 @@ struct Failure {
 
 struct Sorted {
     accepted: Vec<Mailbox>,
-    rejected: Vec<(Mailbox, String)>,
+    rejected: Vec<(Mailbox, Problem)>,
     deferred: Vec<Mailbox>,
     /// The longest `retry_after` among the deferred recipients.
     retry_after: Option<Duration>,
@@ -480,9 +502,9 @@ fn sort_results(recipients: &[Mailbox], result: DeliveryResult) -> Sorted {
             .map(|index| results.swap_remove(index).outcome);
         match outcome {
             Some(Outcome::Accepted) => sorted.accepted.push(recipient.clone()),
-            Some(Outcome::Rejected { problem }) => sorted
-                .rejected
-                .push((recipient.clone(), problem.problem_type.to_string())),
+            Some(Outcome::Rejected { problem }) => {
+                sorted.rejected.push((recipient.clone(), problem));
+            }
             Some(Outcome::Deferred { retry_after, .. }) => {
                 sorted.deferred.push(recipient.clone());
                 sorted.retry_after = sorted.retry_after.max(retry_after);
@@ -523,7 +545,7 @@ fn io_error(path: &Path) -> impl FnOnce(io::Error) -> QueueError {
 
 #[cfg(test)]
 mod tests {
-    use idmx_core::problem::{Problem, ProblemKind};
+    use idmx_core::problem::ProblemKind;
     use idmx_core::result::RecipientResult;
 
     use super::*;

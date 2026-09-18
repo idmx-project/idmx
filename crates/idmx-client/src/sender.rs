@@ -6,6 +6,7 @@ use hickory_resolver::TokioResolver;
 use idmx_core::body::encode;
 use idmx_core::capabilities::Capabilities;
 use idmx_core::discovery::{Discovery, DiscoveryError, Endpoint, discover};
+use idmx_core::domain::Domain;
 use idmx_core::envelope::{Envelope, ReversePath};
 use idmx_core::idempotency::IdempotencyKey;
 use idmx_core::problem::{FailureClass, Problem, ProblemKind, ProblemType};
@@ -218,6 +219,12 @@ impl Sender {
             Err(error) => Attempt::Unreachable(error),
         };
         Ok((attempt, Some(capabilities)))
+    }
+
+    /// The domain this sender signs for.
+    #[must_use]
+    pub fn signing_domain(&self) -> &Domain {
+        self.identity.keyid().domain()
     }
 
     fn check_sender(&self, envelope: &Envelope) -> Result<(), SendError> {
