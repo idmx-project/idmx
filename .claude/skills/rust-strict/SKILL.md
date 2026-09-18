@@ -1,9 +1,9 @@
 ---
-name: own_rust
-description: Personal Rust guidelines — type-driven design (enums, newtypes, type-state), error handling (anyhow vs thiserror), project structure, visibility, tooling, and CI hardening. Use when writing, reviewing, or refactoring Rust code, or when the user invokes /own_rust.
+name: rust-strict
+description: Personal Rust guidelines — type-driven design (enums, newtypes, type-state), error handling (anyhow vs thiserror), project structure, visibility, tooling, and CI hardening. Use when writing, reviewing, or refactoring Rust code, or when the user invokes /rust-strict.
 ---
 
-# Own Rust Guidelines
+# Strict Rust Guidelines
 
 Apply these when writing, reviewing, or refactoring Rust. Core idea: **make invalid states
 unrepresentable and let the compiler enforce the business logic.** When reviewing, report
