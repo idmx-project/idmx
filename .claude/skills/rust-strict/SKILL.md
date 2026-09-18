@@ -1,6 +1,6 @@
 ---
 name: rust-strict
-description: Personal Rust guidelines — type-driven design (enums, newtypes, type-state), error handling (anyhow vs thiserror), project structure, visibility, performance, tooling, and CI hardening. Use when writing, reviewing, or refactoring Rust code, or when the user invokes /rust-strict.
+description: Personal Rust guidelines — type-driven design (enums, newtypes, type-state), error handling (anyhow vs thiserror), project structure, visibility, performance, testing, tooling, and CI hardening. Use when writing, reviewing, or refactoring Rust code, or when the user invokes /rust-strict.
 ---
 
 # Strict Rust Guidelines
@@ -159,6 +159,10 @@ Cheap habits below are defaults. Anything bigger: measure first (`cargo bench`/c
   `collect()` into a temporary `Vec` just to iterate again. Reuse buffers (`clear()` and
   refill) and use `with_capacity` when the size is known. `Cow<'_, str>` when only some paths
   need to allocate.
+- **Evaluate fallbacks lazily:** `ok_or_else`, `unwrap_or_else`, `map_or_else`,
+  `or_insert_with` over the eager forms (`ok_or`, `unwrap_or`, `or_insert`) whenever the
+  fallback allocates, formats, or computes — eager arguments are built even on the happy
+  path. Eager forms are fine for constants and cheap `Copy` values.
 - **Don't repeat work:** one lookup instead of check + insert + update — use the `entry` API.
 
   ```rust
@@ -186,25 +190,63 @@ Cheap habits below are defaults. Anything bigger: measure first (`cargo bench`/c
 - `dbg!(expr)` over `println!` for debugging — prints file/line, expression, and value, and
   returns the value. Never commit it.
 - `todo!()` over `// TODO` comments for unfinished paths — code keeps compiling and the gap is
-  loud at runtime. Never ship it.
+  loud at runtime. Never ship it: `todo!()` is for work in progress only. Anything deferred
+  past a commit becomes `// TODO(#123): ...` with a linked issue; a bare `// TODO` is not
+  allowed.
 - `bacon` for a continuous check/clippy/test feedback loop.
 - `cargo nextest run` for faster, parallel test runs.
 - Compiler-driven development: read the full error and its suggestion; ownership/borrowing
   errors usually point at a design problem. Fix the design — don't silence it with `clone()`,
   `Rc<RefCell<_>>`, or `'static`.
 
-## 6. Quality gates and CI
+## 6. Testing
+
+- Name tests after behavior: `parse_should_return_error_when_input_empty`. The name is the
+  failure message.
+- One behavior per test, ideally one assertion. Several assertions on the same result are
+  fine; several scenarios in one test are not.
+- Test the error paths, not only the happy path — assert on the specific variant
+  (`assert!(matches!(err, VerifyError::Expired(_)))`), which is another reason libraries use
+  typed errors.
+- `assert_eq!`/`assert_ne!` over `assert!(a == b)` for useful diffs; add a message when the
+  condition is not self-explanatory.
+- Unit tests in `#[cfg(test)] mod tests` next to the code; integration tests in `tests/`
+  exercise only the public API; doc tests (`///` examples) for public API usage — they keep
+  the docs honest.
+- `cargo insta` snapshots for large generated output (serialized messages, rendered text).
+  Keep snapshots small and review every diff; never accept blindly.
+
+## 7. Quality gates and CI
 
 Run locally before committing and enforce in CI:
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --all-targets --all-features --locked -- -D warnings
 cargo nextest run --all-features
 cargo audit            # known vulnerabilities (RustSec)
 cargo deny check       # licenses, banned/duplicate deps, sources
 cargo tarpaulin        # test coverage
 ```
+
+Clippy discipline:
+
+- Fix warnings, don't silence them. For a real false positive use
+  `#[expect(clippy::lint_name)]` with a comment saying why — not `#[allow]`; `expect` warns
+  once the suppression is no longer needed.
+- Lints to take seriously: `redundant_clone`, `needless_collect`, `large_enum_variant` (box
+  the big variant), and the whole `clippy::perf` group.
+- Configure lints once in `Cargo.toml` instead of per-file attributes:
+
+  ```toml
+  [workspace.lints.clippy]
+  perf = { level = "deny", priority = -1 }
+  redundant_clone = "deny"
+
+  # in each member crate
+  [lints]
+  workspace = true
+  ```
 
 ## Review checklist
 
@@ -216,7 +258,9 @@ cargo tarpaulin        # test coverage
    matches on, or `anyhow` where the caller must branch on the failure? → swap.
 5. Fallible I/O without `context`/`with_context`? → add.
 6. `pub` that could be `pub(crate)` or private? → narrow.
-7. Leftover `dbg!`, `todo!`, `unwrap()`? → remove.
+7. Leftover `dbg!`, `todo!`, `unwrap()`, bare `// TODO` without issue? → remove / link issue.
 8. Owned params (`String`, `Vec<T>`) that are only read? Double map lookups? `Vec::remove` where
    order is irrelevant? → `&str`/`&[T]`, `entry`, `swap_remove`.
-9. fmt, clippy `-D warnings`, tests, audit, deny all green?
+9. New behavior and its error paths covered by descriptively named tests?
+10. `#[allow(clippy::..)]` without justification? → fix or `#[expect]` with reason.
+11. fmt, clippy `-D warnings`, tests, audit, deny all green?
