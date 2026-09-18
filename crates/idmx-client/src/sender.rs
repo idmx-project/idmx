@@ -122,22 +122,11 @@ impl Sender {
         pins: &mut PinStore,
     ) -> Result<Attempt, SendError> {
         let domain = envelope.recipient_domain();
-        let pinned = || {
-            pins.lookup(domain, SystemTime::now())
-                .map(<[String]>::to_vec)
-        };
-        let authorities: Vec<String> = match discover(&self.resolver, domain).await {
-            Ok(Discovery::Supported(endpoints)) => {
-                endpoints.iter().map(Endpoint::authority).collect()
-            }
-            Ok(Discovery::Unsupported) => match pinned() {
-                Some(authorities) => authorities,
-                None => return Ok(Attempt::UseSmtp(SmtpReason::NotAdvertised)),
-            },
-            Err(error) => match pinned() {
-                Some(authorities) => authorities,
-                None => return Ok(Attempt::UseSmtp(SmtpReason::DiscoveryFailed(error))),
-            },
+        let discovery = discover(&self.resolver, domain).await;
+        let pinned = pins.lookup(domain, SystemTime::now());
+        let authorities = match choose_endpoints(discovery, pinned) {
+            Ok(authorities) => authorities,
+            Err(reason) => return Ok(Attempt::UseSmtp(reason)),
         };
 
         let mut last = Attempt::UseSmtp(SmtpReason::NotAdvertised);
@@ -260,6 +249,22 @@ impl Sender {
     }
 }
 
+/// The decision table of `spec/discovery.md` §3.2: a fresh record wins; without
+/// one, a valid pin keeps delivery on IDMX; without either, SMTP.
+fn choose_endpoints(
+    discovery: Result<Discovery, DiscoveryError>,
+    pinned: Option<&[String]>,
+) -> Result<Vec<String>, SmtpReason> {
+    match (discovery, pinned) {
+        (Ok(Discovery::Supported(endpoints)), _) => {
+            Ok(endpoints.iter().map(Endpoint::authority).collect())
+        }
+        (Ok(Discovery::Unsupported) | Err(_), Some(pinned)) => Ok(pinned.to_vec()),
+        (Ok(Discovery::Unsupported), None) => Err(SmtpReason::NotAdvertised),
+        (Err(error), None) => Err(SmtpReason::DiscoveryFailed(error)),
+    }
+}
+
 /// Refuses locally what the receiver has announced it would refuse.
 fn check_limits(
     capabilities: &Capabilities,
@@ -342,5 +347,42 @@ async fn classify_failure(response: Response) -> Attempt {
             status: Some(status.as_u16()),
             detail: None,
         })),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pinned() -> Vec<String> {
+        vec!["idmx.receiver.example:8443".to_owned()]
+    }
+
+    #[test]
+    fn choose_endpoints_should_use_pin_when_record_is_gone() {
+        let chosen = choose_endpoints(Ok(Discovery::Unsupported), Some(&pinned()));
+
+        assert_eq!(chosen.ok(), Some(pinned()));
+    }
+
+    #[test]
+    fn choose_endpoints_should_use_pin_when_lookup_fails() {
+        let chosen = choose_endpoints(Err(DiscoveryError::AliasChainTooLong), Some(&pinned()));
+
+        assert_eq!(chosen.ok(), Some(pinned()));
+    }
+
+    #[test]
+    fn choose_endpoints_should_use_smtp_when_record_is_gone_and_no_pin() {
+        let chosen = choose_endpoints(Ok(Discovery::Unsupported), None);
+
+        assert!(matches!(chosen, Err(SmtpReason::NotAdvertised)));
+    }
+
+    #[test]
+    fn choose_endpoints_should_use_smtp_when_lookup_fails_and_no_pin() {
+        let chosen = choose_endpoints(Err(DiscoveryError::AliasChainTooLong), None);
+
+        assert!(matches!(chosen, Err(SmtpReason::DiscoveryFailed(_))));
     }
 }
