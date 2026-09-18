@@ -45,7 +45,7 @@ run_says() { # pattern: one queue run prints a line matching pattern
 
 smtp_delivered() { # mailbox dir below /var/mail/vhosts, pattern; Postfix delivers asynchronously
     for _ in $(seq 1 30); do
-        if "$engine" exec idmx-legacy sh -c "grep -rqs -- '$2' /var/mail/vhosts/$1/new"; then
+        if "$engine" exec idmx-legacy sh -c "grep -rqs -- '$2' /var/mail/vhosts/$1"; then
             return 0
         fi
         sleep 1
@@ -54,7 +54,7 @@ smtp_delivered() { # mailbox dir below /var/mail/vhosts, pattern; Postfix delive
 }
 
 not_smtp_delivered() { # mailbox dir, pattern
-    ! "$engine" exec idmx-legacy sh -c "grep -rqs -- '$2' /var/mail/vhosts/$1/new"
+    ! "$engine" exec idmx-legacy sh -c "grep -rqs -- '$2' /var/mail/vhosts/$1"
 }
 
 wait_for_dns() {
@@ -86,6 +86,12 @@ check "... with Postfix's trace header" \
 echo "-- an IDMX rejection never falls back"
 check "message to nobody@domain-b.test is queued" queue nobody@domain-b.test flow2-rejected
 check "queue run fails it permanently" run_says "nobody@domain-b.test: failed: .*recipient_not_found"
+check "nothing went to SMTP" not_smtp_delivered domain-b.test "flow2-rejected"
+check "next queue run delivers the bounce to alice over IDMX" \
+    run_says "alice@domain-a.test: accepted over IDMX"
+check "alice's maildir has the DSN for nobody@domain-b.test" \
+    "$engine" exec idmx-domain-a sh -c \
+    "grep -rqs 'Final-Recipient: rfc822; nobody@domain-b.test' /var/lib/idmxd/mail/alice/new"
 check "queue is empty" run_says "^0 job(s) still queued"
 
 echo "-- pinned domain, endpoint down: retry IDMX, then SMTP after the window"
@@ -93,6 +99,31 @@ check "message to bob@domain-b.test is queued" queue bob@domain-b.test flow2-idm
 check "queue run delivers it over IDMX" run_says "bob@domain-b.test: accepted over IDMX"
 check "domain-b.test is now pinned" \
     "$engine" exec idmx-mta-a grep -q '"domain-b.test"' "$spool/pins.json"
+
+echo "-- pinned domain, SVCB record stripped from DNS: stay on IDMX"
+zone=$(dirname "$0")/generated/dns/domain-b.test.zone
+original=$(<"$zone")
+publish() { # zone text: CoreDNS reloads the zone when the SOA serial changes
+    sed "s/IN SOA\(.*\) [0-9]* 3600 600/IN SOA\1 $(date +%s) 3600 600/" <<<"$1" >"$zone"
+}
+discovery_says() { # pattern
+    for _ in $(seq 1 30); do
+        if "$engine" exec idmx-mta-a idmx discover domain-b.test 2>&1 | grep -q -- "$1"; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+publish "$(grep -v '^_idmx ' <<<"$original")"
+check "domain-b.test no longer advertises IDMX" discovery_says "use SMTP"
+check "message to bob@domain-b.test is queued" queue bob@domain-b.test flow2-pinned
+check "queue run still delivers it over IDMX (pinned endpoint)" \
+    run_says "bob@domain-b.test: accepted over IDMX"
+check "it never went to SMTP" not_smtp_delivered domain-b.test/bob "flow2-pinned"
+sleep 1 # a new serial needs a new second
+publish "$original"
+check "domain-b.test advertises IDMX again" discovery_says https
 
 "$engine" stop idmx-domain-b >/dev/null
 check "second message to bob@domain-b.test is queued" queue bob@domain-b.test flow2-fallback

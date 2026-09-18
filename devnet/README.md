@@ -52,12 +52,14 @@ podman logs idmx-mta-a        # Postfix log of the sending side
 
 ## Flow 2
 
-`flow2.sh` covers the three sender-side rules of `spec/errors.md` §3:
+`flow2.sh` covers the sender-side rules of `spec/errors.md` §3:
 
 1. `legacy.test` has no `_idmx` record and no pin: `idmx queue run` hands the
    message to Postfix at once, which delivers it by MX lookup.
 2. An IDMX rejection (`recipient_not_found`) fails the job and never reaches
-   SMTP.
-3. `domain-b.test` is pinned by a successful IDMX delivery, then its endpoint
+   SMTP; alice gets an RFC 3464 DSN, delivered over IDMX.
+3. `domain-b.test` is pinned by a successful IDMX delivery, then its SVCB
+   record is removed from the zone: delivery stays on the pinned endpoint.
+4. With the pin still valid, the endpoint of `domain-b.test`
    is stopped: the job is retried over IDMX and goes to SMTP only after the
    fallback window (shortened to seconds with `--fallback-window`).

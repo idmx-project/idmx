@@ -5,7 +5,10 @@ domain-a.test:53 {
 }
 
 domain-b.test:53 {
-    file /etc/coredns/domain-b.test.zone
+    # flow2.sh edits this zone while the devnet runs.
+    file /etc/coredns/domain-b.test.zone {
+        reload 2s
+    }
     errors
     log
 }
