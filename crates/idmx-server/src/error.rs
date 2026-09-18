@@ -18,6 +18,10 @@ pub enum DeliveryError {
     /// A required header is missing, repeated, or not text.
     #[error("header `{0}` is missing or malformed")]
     Header(&'static str),
+    /// A signature header is missing, repeated, or not text: the request is
+    /// unsigned (`spec/signing.md` §1).
+    #[error("signature header `{0}` is missing or malformed")]
+    SignatureHeader(&'static str),
     /// `Idempotency-Key` does not have the required form.
     #[error(transparent)]
     IdempotencyKey(#[from] IdempotencyKeyError),
@@ -71,9 +75,10 @@ impl DeliveryError {
             | Self::TooManyRecipients(_) => ProblemKind::InvalidRequest,
             Self::TooLarge(_) => ProblemKind::MessageTooLarge,
             Self::KeyLookup(error) if error.is_temporary() => ProblemKind::TemporaryFailure,
-            Self::Authority(_) | Self::Signature(_) | Self::KeyLookup(_) => {
-                ProblemKind::InvalidSignature
-            }
+            Self::SignatureHeader(_)
+            | Self::Authority(_)
+            | Self::Signature(_)
+            | Self::KeyLookup(_) => ProblemKind::InvalidSignature,
             Self::ForeignDomain(_) => ProblemKind::PolicyRejected,
             Self::IdempotencyConflict => ProblemKind::IdempotencyConflict,
             Self::BodyRead | Self::InFlight | Self::Storage(_) => ProblemKind::TemporaryFailure,

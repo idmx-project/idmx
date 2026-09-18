@@ -360,9 +360,10 @@ async fn deliver_should_reject_request_without_signature_headers() {
 
     let (status, body) = receiver.send(request).await;
 
+    // `spec/signing.md` §1: an unsigned request is `invalid_signature`.
     assert_eq!(
         (status, &body["type"]),
-        (StatusCode::BAD_REQUEST, &problem_type("invalid_request"))
+        (StatusCode::UNAUTHORIZED, &problem_type("invalid_signature"))
     );
 }
 

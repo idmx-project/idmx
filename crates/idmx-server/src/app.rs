@@ -88,9 +88,9 @@ async fn deliver(State(app): State<Arc<App>>, request: Request) -> Result<Respon
     let idempotency_key: IdempotencyKey = text_header(headers, "idempotency-key")?.parse()?;
     let content_type = text_header(headers, "content-type")?;
     let signature_headers = SignatureHeaders {
-        content_digest: text_header(headers, "content-digest")?.to_owned(),
-        signature_input: text_header(headers, "signature-input")?.to_owned(),
-        signature: text_header(headers, "signature")?.to_owned(),
+        content_digest: signature_header(headers, "content-digest")?.to_owned(),
+        signature_input: signature_header(headers, "signature-input")?.to_owned(),
+        signature: signature_header(headers, "signature")?.to_owned(),
     };
     let body = read_body(body, headers, app.config.max_message_size).await?;
 
@@ -157,6 +157,14 @@ fn text_header<'a>(headers: &'a HeaderMap, name: &'static str) -> Result<&'a str
         (Some(value), None) => value.to_str().map_err(|_| DeliveryError::Header(name)),
         _ => Err(DeliveryError::Header(name)),
     }
+}
+
+/// Like [`text_header`], for the headers without which a request is unsigned.
+fn signature_header<'a>(
+    headers: &'a HeaderMap,
+    name: &'static str,
+) -> Result<&'a str, DeliveryError> {
+    text_header(headers, name).map_err(|_| DeliveryError::SignatureHeader(name))
 }
 
 async fn read_body(
