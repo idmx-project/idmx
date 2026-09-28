@@ -11,6 +11,7 @@ deterministic, so a conforming signer reproduces `expected` byte for byte.
 | `delivery-basic.json` | Body layout: decoding `signing-basic.body` must yield this envelope and `delivery-basic.eml` |
 | `delivery-basic.eml` | The raw message inside the body (CRLF; do not normalize) |
 | `delivery-result.json` | A `200` response with one recipient per status |
+| `mailbox.json` | Mailbox syntax cases (`delivery.md` §3.1), each `valid`, `invalid`, or `not_minimal` |
 
 The private key is the public RFC 8032 §7.1 TEST 1 key. Never use it outside tests.
 

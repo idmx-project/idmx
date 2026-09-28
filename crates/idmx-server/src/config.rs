@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn parse_should_fail_when_local_part_is_not_a_safe_directory_name() {
-        let result = with("[[mailbox]]\naddress = \"../etc@receiver.example\"");
+        let result = with("[[mailbox]]\naddress = \"a/b@receiver.example\"");
 
         assert!(
             matches!(result, Err(ConfigError::Maildir(_))),

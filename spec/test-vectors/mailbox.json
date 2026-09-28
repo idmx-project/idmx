@@ -1,0 +1,143 @@
+{
+  "description": "Mailbox syntax cases for delivery.md section 3.1. `address` is the JSON string value as it appears in the envelope. `expected`: `valid`; `invalid` (a receiver MUST answer an envelope holding it with `invalid_request`); `not_minimal` (senders MUST NOT produce it; a receiver MAY answer `invalid_request`).",
+  "cases": [
+    {
+      "name": "dot-string",
+      "description": "Plain dot-string.",
+      "address": "alice@receiver.example",
+      "expected": "valid"
+    },
+    {
+      "name": "dot-string-specials",
+      "description": "Every RFC 5322 atext special.",
+      "address": "a.b+tag!#$%&'*/=?^_`{|}~-@receiver.example",
+      "expected": "valid"
+    },
+    {
+      "name": "utf8",
+      "description": "RFC 6531 UTF-8 in a dot-string.",
+      "address": "jürgen@receiver.example",
+      "expected": "valid"
+    },
+    {
+      "name": "case-kept",
+      "description": "Local-part case is significant and kept.",
+      "address": "Alice@receiver.example",
+      "expected": "valid"
+    },
+    {
+      "name": "quoted-space",
+      "description": "Space needs a quoted-string.",
+      "address": "\"john doe\"@receiver.example",
+      "expected": "valid"
+    },
+    {
+      "name": "quoted-at",
+      "description": "`@` inside quotes; the mailbox splits at the last `@`.",
+      "address": "\"odd@local\"@receiver.example",
+      "expected": "valid"
+    },
+    {
+      "name": "quoted-escapes",
+      "description": "Escaped `\"` and `\\` are the only allowed quoted-pairs.",
+      "address": "\"a\\\"b\\\\c\"@receiver.example",
+      "expected": "valid"
+    },
+    {
+      "name": "64-octets",
+      "description": "Longest dot-string.",
+      "address": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@receiver.example",
+      "expected": "valid"
+    },
+    {
+      "name": "64-octets-quoted",
+      "description": "Quotes count toward the 64 octets.",
+      "address": "\"                                                              \"@receiver.example",
+      "expected": "valid"
+    },
+    {
+      "name": "65-octets",
+      "description": "One octet over the limit.",
+      "address": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@receiver.example",
+      "expected": "invalid"
+    },
+    {
+      "name": "65-octets-quoted",
+      "description": "Quotes push the written form over 64 octets.",
+      "address": "\"                                                               \"@receiver.example",
+      "expected": "invalid"
+    },
+    {
+      "name": "empty",
+      "description": "Empty local-part.",
+      "address": "@receiver.example",
+      "expected": "invalid"
+    },
+    {
+      "name": "no-at",
+      "description": "No `@`.",
+      "address": "alice",
+      "expected": "invalid"
+    },
+    {
+      "name": "unquoted-space",
+      "description": "Space outside a quoted-string.",
+      "address": "john doe@receiver.example",
+      "expected": "invalid"
+    },
+    {
+      "name": "leading-dot",
+      "description": "Empty atom.",
+      "address": ".alice@receiver.example",
+      "expected": "invalid"
+    },
+    {
+      "name": "trailing-dot",
+      "description": "Empty atom.",
+      "address": "alice.@receiver.example",
+      "expected": "invalid"
+    },
+    {
+      "name": "double-dot",
+      "description": "Empty atom.",
+      "address": "al..ice@receiver.example",
+      "expected": "invalid"
+    },
+    {
+      "name": "unterminated-quote",
+      "description": "Quoted-string without closing quote.",
+      "address": "\"john doe@receiver.example",
+      "expected": "invalid"
+    },
+    {
+      "name": "control",
+      "description": "C0 controls are never allowed.",
+      "address": "a\r\nb@receiver.example",
+      "expected": "invalid"
+    },
+    {
+      "name": "c1-control",
+      "description": "C1 controls are excluded from UTF8-non-ascii.",
+      "address": "ab@receiver.example",
+      "expected": "invalid"
+    },
+    {
+      "name": "quoted-control",
+      "description": "C0 controls are not allowed in quoted-strings either.",
+      "address": "\"a\u0007b\"@receiver.example",
+      "expected": "invalid"
+    },
+    {
+      "name": "not-minimal-quotes",
+      "description": "Content is a dot-string, so it must not be quoted.",
+      "address": "\"alice\"@receiver.example",
+      "expected": "not_minimal"
+    },
+    {
+      "name": "not-minimal-escape",
+      "description": "Only `\"` and `\\` may be escaped.",
+      "address": "\"a\\ b\"@receiver.example",
+      "expected": "not_minimal"
+    }
+  ]
+}

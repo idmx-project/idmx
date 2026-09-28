@@ -15,16 +15,21 @@ pub enum MailboxError {
     /// The address contains no `@`.
     #[error("mailbox has no `@`")]
     MissingAt,
-    /// The local part is empty, longer than 64 octets, or has control characters.
-    #[error("mailbox local part is empty, too long, or contains control characters")]
+    /// The local part is empty, longer than 64 octets, or not a dot-string or
+    /// quoted-string.
+    #[error("mailbox local part is empty, too long, or not a dot-string or quoted-string")]
     LocalPart,
+    /// The local part is quoted or escaped where its minimal form is not.
+    #[error("mailbox local part is not in minimal form")]
+    NotMinimal,
     /// The part after the last `@` is not a valid domain.
     #[error("mailbox domain is invalid: {0}")]
     Domain(#[from] DomainError),
 }
 
-/// A `<local-part>@<domain>` address. The local part is opaque to everyone but
-/// the receiving domain and compared byte for byte; the domain is normalized.
+/// A `<local-part>@<domain>` address. The local part is kept in its minimal
+/// SMTP written form, opaque to everyone but the receiving domain, and compared
+/// byte for byte; the domain is normalized.
 ///
 /// # Examples
 ///
@@ -62,17 +67,68 @@ impl FromStr for Mailbox {
 
     fn from_str(address: &str) -> Result<Self, Self::Err> {
         let (local_part, domain) = address.rsplit_once('@').ok_or(MailboxError::MissingAt)?;
-        if local_part.is_empty()
-            || local_part.len() > MAX_LOCAL_PART_LEN
-            || local_part.chars().any(char::is_control)
-        {
-            return Err(MailboxError::LocalPart);
-        }
+        check_local_part(local_part)?;
         Ok(Self {
             local_part: local_part.to_owned(),
             domain: domain.parse()?,
         })
     }
+}
+
+/// Checks `local_part` against the `Local-part` grammar and the minimal-form
+/// rule of `spec/delivery.md` §3.1.
+fn check_local_part(local_part: &str) -> Result<(), MailboxError> {
+    if local_part.is_empty() || local_part.len() > MAX_LOCAL_PART_LEN {
+        return Err(MailboxError::LocalPart);
+    }
+    let Some(quoted) = local_part.strip_prefix('"') else {
+        return if is_dot_string(local_part) {
+            Ok(())
+        } else {
+            Err(MailboxError::LocalPart)
+        };
+    };
+    let inner = quoted.strip_suffix('"').ok_or(MailboxError::LocalPart)?;
+    let mut content = String::with_capacity(inner.len());
+    let mut chars = inner.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                let escaped = chars.next().ok_or(MailboxError::LocalPart)?;
+                if !matches!(escaped, ' '..='~') {
+                    return Err(MailboxError::LocalPart);
+                }
+                if !matches!(escaped, '"' | '\\') {
+                    return Err(MailboxError::NotMinimal);
+                }
+                content.push(escaped);
+            }
+            '"' => return Err(MailboxError::LocalPart),
+            ' '..='~' => content.push(c),
+            _ if is_utf8_non_ascii(c) => content.push(c),
+            _ => return Err(MailboxError::LocalPart),
+        }
+    }
+    if is_dot_string(&content) {
+        return Err(MailboxError::NotMinimal);
+    }
+    Ok(())
+}
+
+/// `Atom *("." Atom)` with RFC 6531 UTF-8 in atoms.
+fn is_dot_string(s: &str) -> bool {
+    s.split('.')
+        .all(|atom| !atom.is_empty() && atom.chars().all(|c| is_atext(c) || is_utf8_non_ascii(c)))
+}
+
+/// RFC 5322 `atext`.
+fn is_atext(c: char) -> bool {
+    c.is_ascii_alphanumeric() || "!#$%&'*+-/=?^_`{|}~".contains(c)
+}
+
+/// RFC 6532 `UTF8-non-ascii` without the C1 controls.
+fn is_utf8_non_ascii(c: char) -> bool {
+    !c.is_ascii() && !c.is_control()
 }
 
 impl TryFrom<String> for Mailbox {
@@ -118,6 +174,80 @@ mod tests {
         let result = "jürgen@sender.example".parse::<Mailbox>();
 
         assert!(result.is_ok(), "unexpected: {result:?}");
+    }
+
+    #[test]
+    fn parse_should_accept_quoted_local_part_with_space_and_escapes() {
+        let mailbox: Mailbox = r#""john \"j\\d\" doe"@sender.example"#.parse().unwrap();
+
+        assert_eq!(mailbox.local_part(), r#""john \"j\\d\" doe""#);
+    }
+
+    #[test]
+    fn parse_should_accept_dot_string_with_specials() {
+        let result = "a.b+tag!#$%&'*/=?^_`{|}~-@sender.example".parse::<Mailbox>();
+
+        assert!(result.is_ok(), "unexpected: {result:?}");
+    }
+
+    #[test]
+    fn parse_should_fail_when_quoting_is_not_needed() {
+        assert_eq!(
+            "\"alice\"@sender.example".parse::<Mailbox>(),
+            Err(MailboxError::NotMinimal)
+        );
+    }
+
+    #[test]
+    fn parse_should_fail_when_escape_is_not_needed() {
+        assert_eq!(
+            r#""a\ b"@sender.example"#.parse::<Mailbox>(),
+            Err(MailboxError::NotMinimal)
+        );
+    }
+
+    #[test]
+    fn parse_should_fail_when_space_unquoted() {
+        assert_eq!(
+            "john doe@sender.example".parse::<Mailbox>(),
+            Err(MailboxError::LocalPart)
+        );
+    }
+
+    #[test]
+    fn parse_should_fail_when_dots_misplaced() {
+        for address in [".a@x.example", "a.@x.example", "a..b@x.example"] {
+            assert_eq!(
+                address.parse::<Mailbox>(),
+                Err(MailboxError::LocalPart),
+                "{address}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_should_fail_when_quote_unterminated() {
+        assert_eq!(
+            "\"a b@sender.example".parse::<Mailbox>(),
+            Err(MailboxError::LocalPart)
+        );
+    }
+
+    #[test]
+    fn parse_should_fail_when_local_part_has_c1_control() {
+        assert_eq!(
+            "a\u{85}b@sender.example".parse::<Mailbox>(),
+            Err(MailboxError::LocalPart)
+        );
+    }
+
+    #[test]
+    fn parse_should_count_quotes_toward_64_octets() {
+        let fits = format!("\"{}\"@sender.example", " ".repeat(62));
+        let over = format!("\"{}\"@sender.example", " ".repeat(63));
+
+        assert!(fits.parse::<Mailbox>().is_ok());
+        assert_eq!(over.parse::<Mailbox>(), Err(MailboxError::LocalPart));
     }
 
     #[test]
