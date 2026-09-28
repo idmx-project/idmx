@@ -238,9 +238,11 @@ RFC 8601 syntax with the method **`idmx`**:
   signature inside the message) MAY be added as usual; they are independent of
   `idmx=`.
 
-TODO: IANA registrations (`with` protocol type `IDMX`, authentication method
-`idmx`); revisit whether `header.` is the right RFC 8601 property type for
-values taken from the HTTP signature rather than a message header.
+- `header.` here means the HTTP request header fields that carry the
+  signature (`Signature-Input`), not a header field of the message. The
+  property type is kept for its analogy with DKIM's `header.d` / `header.s`.
+
+Registrations for `IDMX` and `idmx`: `iana.md`.
 
 ## 9. Test vectors
 
