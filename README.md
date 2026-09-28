@@ -4,10 +4,12 @@ IDMX is an experimental standards project for modern HTTPS-based inter-domain
 mail delivery while preserving existing `user@domain` addresses and SMTP
 compatibility.
 
-**Status: experimental.** Nothing here is stable. The spec is an early draft
-and the reference implementation covers signing, discovery, the receiver
-(`idmxd`), and single delivery attempts (`idmx send`). The devnet demonstrates
-modern → modern delivery; queueing, pinning, and SMTP fallback are still missing.
+**Status: experimental.** Nothing here is stable. The spec is heading for
+`v1-draft-00`, a draft for review. The reference implementation covers signing,
+discovery, the receiver (`idmxd`), and a sender (`idmx send`) with retries,
+pinning, a spool queue, SMTP fallback, and bounces. The devnet demonstrates
+modern → modern delivery, SMTP fallback, and a conformance run against both
+receivers.
 
 ## Layout
 
@@ -19,6 +21,8 @@ spec/            Specification (source of truth)
   signing.md       RFC 9421 signing profile, keys at <selector>._idmxkey.<domain>
   capabilities.md  Capabilities document: versions, limits, no feature flags
   errors.md        Error identifiers, retry and SMTP fallback rules
+  iana.md          Registrations IDMX would request
+  test-vectors/    Signing, delivery, and mailbox vectors
 crates/
   idmx-core/       Envelope types, RFC 9421 sign/verify, SVCB discovery
   idmx-server/     Receiver daemon (binary: idmxd)
