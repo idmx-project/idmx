@@ -4,14 +4,22 @@ Thank you for reading this. IDMX (Inter-Domain Mail Exchange) delivers mail
 between domains over HTTPS instead of SMTP, while keeping `user@domain`
 addresses, the RFC 5322 message format, and SMTP as a fallback.
 
-Please send feedback to **feedback@idmx-project.org**, naming the draft and
-section (for example "v1-draft-00, `discovery.md` §3.2"). The review is public.
-Feedback on v1-draft-00 by **2026-12-31** will be considered for v1-draft-01;
-later feedback is still welcome and goes into the draft after that. Each wire
-change the review causes gets a new draft number. Short answers to the
-questions below are more useful than a full read; skip whatever is outside
-your field. Report security issues privately to
-**security@idmx-project.org**.
+The review is public. Feedback on v1-draft-00 by **2026-12-31** will be
+considered for v1-draft-01; later feedback is still welcome and goes into the
+draft after that. Each wire change the review causes gets a new draft number.
+Short answers to the questions below are more useful than a full read; skip
+whatever is outside your field.
+
+## Sending feedback
+
+Name the draft and section in every comment, for example "v1-draft-00,
+`discovery.md` §3.2".
+
+- **Email:** [feedback@idmx-project.org](mailto:feedback@idmx-project.org?subject=IDMX%20v1-draft-00%20review).
+- **GitHub:** [open an issue](https://github.com/idmx-project/idmx/issues/new)
+  in the idmx repository; issues are public.
+- **Security issues:** email [security@idmx-project.org](mailto:security@idmx-project.org)
+  privately, not in a public issue.
 
 ## What to read
 
