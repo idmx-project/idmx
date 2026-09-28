@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths: ['spec/**']
     tags: ['spec/*']
+  workflow_dispatch:
 
 permissions: {}
 
