@@ -97,7 +97,9 @@ handles RR type 64; there is no substitute record type.
   can still force SMTP. This is a known v1 limitation, accepted so that a
   receiver outage delays mail by hours, not days.
 
-TODO: pin-failure reporting (TLS-RPT equivalent?).
+Pin-failure reporting (a TLS-RPT equivalent that tells a receiver about
+failed pinned deliveries) is not part of v1. It would arrive with a later
+major version, possibly reusing the RFC 8460 report format.
 
 ## 4. Transport
 
