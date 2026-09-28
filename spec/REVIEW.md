@@ -5,10 +5,12 @@ between domains over HTTPS instead of SMTP, while keeping `user@domain`
 addresses, the RFC 5322 message format, and SMTP as a fallback.
 
 Please send feedback to **feedback@idmx-project.org**, naming the draft and
-section (for example "v1-draft-00, `discovery.md` §3.2"). The review is public
-and open-ended; each wire change it causes gets a new draft number. Short
-answers to the questions below are more useful than a full read; skip whatever
-is outside your field. Report security issues privately to
+section (for example "v1-draft-00, `discovery.md` §3.2"). The review is public.
+Feedback on v1-draft-00 by **2026-12-31** will be considered for v1-draft-01;
+later feedback is still welcome and goes into the draft after that. Each wire
+change the review causes gets a new draft number. Short answers to the
+questions below are more useful than a full read; skip whatever is outside
+your field. Report security issues privately to
 **security@idmx-project.org**.
 
 ## What to read
