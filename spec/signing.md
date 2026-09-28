@@ -179,8 +179,13 @@ prov1._idmxkey.sender.example. CNAME sender-example.keys.provider.example.
 - Alias expansion and list explosion re-originate as new deliveries signed by
   the forwarding domain (v1: receiver-internal, spec otherwise silent).
 
-TODO: envelope `from` on forwarded mail (forwarder's address vs SRS-style
-rewrite) — follows from §2.5 but needs explicit text.
+- A forwarded delivery is signed by the forwarder, so by §2.5 its envelope
+  `from` MUST be a mailbox in the **forwarder's domain**, or `null`. The
+  original envelope sender is never carried over.
+- How the forwarder encodes that address (SRS, VERP, one fixed bounce address)
+  is its own business: only the forwarder decodes it, so the spec defines no
+  format. Delivery failures reach the forwarder, which decides whether to
+  report them onward.
 
 ## 7. Verification procedure
 
