@@ -74,6 +74,7 @@ impl DeliveryProbe {
             self.malformed_body(http, origin).await,
             self.foreign_recipient(http, origin).await,
             self.oversize(http, origin).await,
+            self.invalid_mailbox(http, origin).await,
             self.accepted(http, origin).await,
             self.replay(http, origin).await,
             self.conflict(http, origin).await,
@@ -302,6 +303,46 @@ impl DeliveryProbe {
                     delivery,
                     StatusCode::FORBIDDEN,
                     "policy_rejected",
+                )
+                .await,
+        }
+    }
+
+    async fn invalid_mailbox(&self, http: &Client, origin: &Origin) -> Check {
+        let delivery = self.delivery(origin, "mailbox").and_then(|mut delivery| {
+            let from = self.sender()?;
+            // An unquoted space is outside the Local-part grammar; `Mailbox`
+            // cannot hold it, so the envelope is written by hand.
+            let envelope = serde_json::json!({
+                "from": from,
+                "to": [format!("idmx conformance@{}", self.recipient.domain())],
+            });
+            let mut bytes =
+                b"--idmx-conformance\r\nContent-Type: application/json\r\n\r\n".to_vec();
+            bytes.extend_from_slice(envelope.to_string().as_bytes());
+            bytes.extend_from_slice(
+                b"\r\n--idmx-conformance\r\nContent-Type: message/rfc822\r\n\r\n",
+            );
+            bytes.extend_from_slice(MESSAGE);
+            bytes.extend_from_slice(b"\r\n--idmx-conformance--\r\n");
+            delivery.signed = EncodedBody {
+                content_type: "multipart/mixed; boundary=idmx-conformance".to_owned(),
+                bytes,
+            };
+            Ok(delivery)
+        });
+        Check {
+            id: "REQ-04",
+            spec: "delivery.md §3.1",
+            level: Level::Must,
+            requirement: "an envelope with a local-part outside the grammar answers 400 invalid_request",
+            outcome: self
+                .expect(
+                    http,
+                    origin,
+                    delivery,
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
                 )
                 .await,
         }

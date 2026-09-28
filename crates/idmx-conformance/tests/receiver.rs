@@ -150,8 +150,8 @@ async fn run_should_report_each_violation_of_a_broken_receiver() {
         ids_with(&report, failed),
         [
             "CAP-02", "CAP-04", "CAP-06", "CAP-08", "VER-01", "SIG-01", "SIG-02", "SIG-03",
-            "SIG-04", "SIG-05", "SIG-06", "REQ-01", "REQ-02", "REQ-03", "DLV-01", "IDM-02",
-            "DLV-02", "DLV-03",
+            "SIG-04", "SIG-05", "SIG-06", "REQ-01", "REQ-02", "REQ-03", "REQ-04", "DLV-01",
+            "IDM-02", "DLV-02", "DLV-03",
         ],
         "{report}"
     );
