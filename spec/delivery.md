@@ -86,10 +86,31 @@ See `test-vectors/signing-basic.body` for an exact byte sequence.
 `<local-part>@<domain>`, split at the **last** `@`.
 
 - `<domain>`: host-name syntax, IDNA A-labels, compared case-insensitively.
-- `<local-part>`: 1–64 octets of UTF-8 without control characters; opaque to
-  the sender and interpreted only by the receiving domain.
+- `<local-part>`: the RFC 5321 `Local-part` **as written in SMTP**, with the
+  RFC 6531 UTF-8 extension, so SMTP fallback copies it unchanged:
 
-TODO: tighten local-part syntax (RFC 5321 / RFC 6531 alignment, quoting).
+```abnf
+Local-part      = Dot-string / Quoted-string
+Dot-string      = Atom *("." Atom)
+Atom            = 1*atext                    ; RFC 5322 atext, plus UTF8-non-ascii
+Quoted-string   = DQUOTE *QcontentSMTP DQUOTE
+QcontentSMTP    = qtextSMTP / quoted-pairSMTP
+qtextSMTP       = %d32-33 / %d35-91 / %d93-126 / UTF8-non-ascii
+quoted-pairSMTP = %d92 %d32-126
+```
+
+- `UTF8-non-ascii` is RFC 6532's, excluding the C1 controls U+0080–U+009F.
+- At most **64 octets**, counted on the written form (quotes and backslashes
+  included).
+- **Minimal form.** Senders MUST write a local-part as a `Dot-string` when its
+  content is one, and otherwise as a `Quoted-string` that escapes only `"` and
+  `\`. `"alice"` and `"al\ice"` are therefore not valid for `alice`. Receivers
+  MAY reject a non-minimal local-part with `invalid_request`.
+- The local-part is opaque to the sender and interpreted only by the receiving
+  domain. Nobody normalizes it (no case folding, no Unicode normalization);
+  mailboxes are compared as octets of their minimal form.
+- An envelope that is not a JSON object of this shape, or holds an invalid
+  mailbox, → `invalid_request`.
 
 ## 4. Idempotency
 
