@@ -1,0 +1,19 @@
+name: Notify website
+
+# Rebuilds idmx-project.org when the spec changes or a spec draft is tagged.
+on:
+  push:
+    branches: [main]
+    paths: ['spec/**']
+    tags: ['spec/*']
+
+permissions: {}
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh api repos/idmx-project/idmx-project.org/dispatches -f event_type=idmx-spec-updated
+        env:
+          # Fine-grained PAT with Contents: write on idmx-project/idmx-project.org.
+          GH_TOKEN: ${{ secrets.WEBSITE_DISPATCH_TOKEN }}
