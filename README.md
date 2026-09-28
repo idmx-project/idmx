@@ -22,6 +22,7 @@ spec/            Specification (source of truth)
   capabilities.md  Capabilities document: versions, limits, no feature flags
   errors.md        Error identifiers, retry and SMTP fallback rules
   iana.md          Registrations IDMX would request
+  REVIEW.md        Guide and questions for draft reviewers
   test-vectors/    Signing, delivery, and mailbox vectors
 crates/
   idmx-core/       Envelope types, RFC 9421 sign/verify, SVCB discovery
