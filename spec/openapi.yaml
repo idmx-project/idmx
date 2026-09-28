@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 #
-# IDMX server-to-server API. DRAFT: points marked TODO are not settled.
-# Normative companions: delivery.md, discovery.md, signing.md, errors.md.
+# IDMX server-to-server API, v1-draft-00.
+# Normative companions: delivery.md, discovery.md, signing.md, errors.md,
+# capabilities.md.
 openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: IDMX — Inter-Domain Mail Exchange
-  version: 0.0.0-draft
+  version: v1-draft-00
   summary: HTTPS-based inter-domain mail delivery (experimental draft).
   description: |
     The endpoint origin is found via SVCB on `_idmx.<domain>` (see discovery.md).
@@ -185,10 +186,12 @@ components:
       type: string
       description: |
         `<local-part>@<domain>`, split at the last `@`. Domain in host-name
-        syntax (IDNA A-labels); local-part 1-64 octets of UTF-8 without control
-        characters. See delivery.md §3.1.
+        syntax (IDNA A-labels). Local-part as written in SMTP (RFC 5321/6531
+        dot-string or quoted-string), at most 64 octets, in minimal form: the
+        pattern does not check the octet limit or that a quoted-string's
+        content is not a dot-string. See delivery.md §3.1.
       maxLength: 320
-      pattern: '^[^@\s][^\s]*@[A-Za-z0-9.-]+$'
+      pattern: '^(?:[A-Za-z0-9!#$%&''*+/=?^_`{|}~\u00A0-\uFFFF-]+(?:\.[A-Za-z0-9!#$%&''*+/=?^_`{|}~\u00A0-\uFFFF-]+)*|"(?:[ !#-\[\]-~\u00A0-\uFFFF]|\\["\\])*")@[A-Za-z0-9.-]+$'
 
     Envelope:
       $id: https://idmx-project.org/schemas/v1/envelope
